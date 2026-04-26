@@ -1,6 +1,6 @@
 # Spec 0003: One enemy pathfinds
 
-**Status:** Draft
+**Status:** Approved
 **Roadmap day:** GDD §13 Day 1 (closing the Day-1 deliverables; combat lands in spec 0004+ on Day 2)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture), ADR-0009 (testing discipline)
@@ -168,14 +168,7 @@ Per ADR-0008, no hover dependency.
 
 ## Open questions
 
-For the user to confirm before approval:
-
-- **Enemy spawn position.** Recommend `(5, 11)` — same column as protagonist (`5, 7`), 4 tiles south. With protagonist AP 4 and enemy AP 3, the enemy can close 3 tiles per turn and the protagonist can close 4; gives a couple of turns of "approach" before adjacency. Confirm or override.
-- **Enemy step delay.** Recommend 200 ms per step. With enemy maxAP 3, total turn time ≤ 600 ms — well inside §12.1's 2 s budget. Confirm.
-- **Enemy color/visual.** Recommend `#e57373` (warm red) circle, slightly smaller than the protagonist circle so the difference reads at-a-glance. Confirm or pick.
-- **Turn-order indicator placement.** Recommend top HUD bar, left side ("Your turn" / "Enemy turn" in plain text). Alternative: above the inspection panel. Confirm.
-- **Threat-type glyph deferral.** Recommend defer (one enemy of one kind doesn't need disambiguation; panel carries the kind). Reconsider when multiple enemy kinds appear or when the placeholder atlas lands.
-- **Reducer naming.** `endTurn` from spec 0002 was the player's "I'm done." Now we need the player→enemy transition (which `endTurn` morally is) AND the enemy→player return (which is automatic, not user-triggered). Recommend renaming `endTurn` → `advanceTurn` and having it handle both transitions based on `activeTurn`. Confirm.
+_(empty — all six questions resolved 2026-04-26, defaults accepted: enemy spawn at (5,11); 200 ms per-step delay; warm-red `#e57373` circle smaller than protagonist; turn-order indicator on top HUD as plain text; threat-type glyph deferred until multi-kind or atlas; `endTurn` → `advanceTurn` rename. Spec body carries the canonical values.)_
 
 ## Done means
 

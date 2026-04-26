@@ -26,6 +26,15 @@ describe("apCostToReach", () => {
       Infinity,
     );
   });
+
+  test("returns Infinity for blocked targets", () => {
+    const blocked = [{ col: 5, row: 8 }];
+    expect(apCostToReach(start, { col: 5, row: 8 }, map, blocked)).toBe(
+      Infinity,
+    );
+    // A non-blocked target is unaffected.
+    expect(apCostToReach(start, { col: 5, row: 9 }, map, blocked)).toBe(2);
+  });
 });
 
 describe("reachableTiles", () => {
@@ -48,5 +57,14 @@ describe("reachableTiles", () => {
   test("range clips to map bounds when starting near a corner", () => {
     const result = reachableTiles({ col: 0, row: 0 }, 2, map);
     expect(result).toHaveLength(6);
+  });
+
+  test("excludes blocked tiles from the reachable set", () => {
+    const blocked = [{ col: 5, row: 8 }];
+    const result = reachableTiles(start, 4, map, blocked);
+    // Blocked tile must not appear; everything else from the Manhattan diamond stays.
+    expect(result).not.toContainEqual({ col: 5, row: 8 });
+    expect(result).toHaveLength(40); // 41 - 1
+    expect(result).toContainEqual(start);
   });
 });

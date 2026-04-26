@@ -1,11 +1,19 @@
 /**
- * RunScene — the playable scene for spec 0002.
+ * RunScene — the playable scene.
  *
- * Renders the static `Day1Map`, the protagonist, the action-targeting
- * projection (every reachable tile labeled with its AP cost,
- * simultaneously, per ADR-0008), the top HUD bar (turn + End Turn), the
- * sticky inspection panel (selection details + Confirm button when a
- * move is staged), and the orientation-lock overlay.
+ * Spec 0002 substrate (rendering, selection, action targeting, confirm
+ * flow, orientation overlay) is unchanged. Spec 0003 adds:
+ *
+ * - One melee enemy on the map (placeholder warm-red circle).
+ * - Tapping the enemy moves selection to it; panel shows kind / position / AP.
+ * - The enemy's tile is excluded from the reachable set; targeting overlays
+ *   skip it.
+ * - Top HUD turn-order indicator ("Your turn" / "Enemy turn").
+ * - End Turn flow: advanceTurn → step the enemy with a 200 ms delay between
+ *   tile moves → advanceTurn back to the player.
+ * - End Turn button is greyed and non-interactive during the enemy turn.
+ * - Tile taps still update the selection during enemy turn (reads are free)
+ *   but cannot stage or commit moves.
  *
  * Per ADR-0008: tile interaction goes through a single scene-level
  * `pointerdown` handler that calls `pixelToTile`. Tiles are dumb
@@ -13,8 +21,7 @@
  * their own ≥ 44×44 hit areas.
  *
  * Per ADR-0004: scene logic stays thin. State changes call into pure
- * reducers in `systems/run-state.ts`; visuals refresh from the new
- * state.
+ * reducers in `systems/run-state.ts` and `systems/turn.ts`.
  */
 
 import Phaser from "phaser";
@@ -29,10 +36,12 @@ import {
 import { apCostToReach, reachableTiles } from "../systems/movement";
 import {
   type RunState,
+  advanceTurn,
   commitMove,
   createRunState,
-  endTurn,
+  enemyTiles,
 } from "../systems/run-state";
+import { enemyStep } from "../systems/turn";
 
 const TILE_SIZE = viewport.TILE_SIZE;
 const MAP_WIDTH_TILES = 11;
@@ -44,12 +53,15 @@ const HUD_HEIGHT = viewport.HUD_HEIGHT;
 const PANEL_HEIGHT = viewport.PANEL_HEIGHT;
 const PANEL_Y = viewport.WORKING_HEIGHT - PANEL_HEIGHT;
 
+const ENEMY_STEP_DELAY_MS = 200;
+
 const COLOR = {
   sceneBg: "#0a0a0a",
   floor: 0x2a2a2a,
   wall: 0x000000,
   tileBorder: 0x333333,
   protagonist: 0x4ec1f7,
+  enemyMelee: 0xe57373,
   reachable: 0x4ec1f7,
   stagedHaloStroke: 0xffd166,
   hudBg: 0x111111,
@@ -57,26 +69,33 @@ const COLOR = {
   buttonBg: 0x2a4a3a,
   buttonBgDisabled: 0x2a2a2a,
   text: "#ffffff",
+  textDim: "#888888",
   apLabel: "#ffd166",
-  dim: "#888888",
+  enemyTurnLabel: "#e57373",
 } as const;
 
-type Selection = { kind: "protagonist" } | { kind: "tile"; pos: TilePos };
+type Selection =
+  | { kind: "protagonist" }
+  | { kind: "tile"; pos: TilePos }
+  | { kind: "enemy"; id: string };
 
 export class RunScene extends Phaser.Scene {
   private state!: RunState;
   private gridCfg!: GridConfig;
   private staged: TilePos | null = null;
   private selection: Selection = { kind: "protagonist" };
-  private isInputLocked = false;
+  private isOrientationLocked = false;
 
   private targetingLayer!: Phaser.GameObjects.Container;
   private stagedLayer!: Phaser.GameObjects.Container;
   private protagonistSprite!: Phaser.GameObjects.Arc;
+  private enemySprites: Map<string, Phaser.GameObjects.Arc> = new Map();
 
+  private turnIndicatorText!: Phaser.GameObjects.Text;
   private turnText!: Phaser.GameObjects.Text;
   private apText!: Phaser.GameObjects.Text;
   private endTurnRect!: Phaser.GameObjects.Rectangle;
+  private endTurnLabelText!: Phaser.GameObjects.Text;
 
   private panelTitle!: Phaser.GameObjects.Text;
   private panelLine1!: Phaser.GameObjects.Text;
@@ -90,6 +109,11 @@ export class RunScene extends Phaser.Scene {
     super({ key: "RunScene" });
   }
 
+  /** Single source of truth for "is the player allowed to interact?" */
+  private get isInputLocked(): boolean {
+    return this.isOrientationLocked || this.state.activeTurn === "enemy";
+  }
+
   create(): void {
     this.cameras.main.setBackgroundColor(COLOR.sceneBg);
     this.state = createRunState({ seed: Date.now() });
@@ -101,6 +125,7 @@ export class RunScene extends Phaser.Scene {
     this.renderMap();
     this.targetingLayer = this.add.container(0, 0);
     this.stagedLayer = this.add.container(0, 0);
+    this.renderEnemies();
     this.renderProtagonist();
     this.renderHUD();
     this.renderPanel();
@@ -109,8 +134,9 @@ export class RunScene extends Phaser.Scene {
     this.input.on("pointerdown", this.handlePointerDown, this);
     this.events.on("selection-changed", this.refreshPanel, this);
     this.events.on("move-staged", this.refreshStagedHalo, this);
-    this.events.on("move-committed", this.afterMove, this);
-    this.events.on("turn-ended", this.afterTurn, this);
+    this.events.on("move-committed", this.afterPlayerMove, this);
+    this.events.on("turn-changed", this.afterTurnChange, this);
+    this.events.on("enemy-moved", this.afterEnemyStep, this);
 
     this.scale.on("orientationchange", this.checkOrientation, this);
     this.checkOrientation();
@@ -118,6 +144,8 @@ export class RunScene extends Phaser.Scene {
     this.refreshTargeting();
     this.refreshPanel();
     this.refreshHUD();
+    this.refreshTurnIndicator();
+    this.refreshEndTurnVisual();
   }
 
   // ----- Static rendering -----
@@ -136,6 +164,19 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
+  private renderEnemies(): void {
+    for (const enemy of this.state.enemies) {
+      const px = tileToPixel(enemy.position, this.gridCfg);
+      const sprite = this.add.circle(
+        px.x + TILE_SIZE / 2,
+        px.y + TILE_SIZE / 2,
+        TILE_SIZE / 2 - 6,
+        COLOR.enemyMelee,
+      );
+      this.enemySprites.set(enemy.id, sprite);
+    }
+  }
+
   private renderProtagonist(): void {
     const px = tileToPixel(this.state.protagonist.position, this.gridCfg);
     this.protagonistSprite = this.add.circle(
@@ -151,12 +192,17 @@ export class RunScene extends Phaser.Scene {
       .rectangle(0, 0, viewport.WORKING_WIDTH, HUD_HEIGHT, COLOR.hudBg)
       .setOrigin(0, 0);
 
-    this.turnText = this.add.text(8, 12, "", {
+    this.turnIndicatorText = this.add.text(8, 12, "", {
       fontFamily: "monospace",
       fontSize: "16px",
       color: COLOR.text,
     });
-    this.apText = this.add.text(120, 12, "", {
+    this.turnText = this.add.text(120, 12, "", {
+      fontFamily: "monospace",
+      fontSize: "16px",
+      color: COLOR.text,
+    });
+    this.apText = this.add.text(160, 12, "", {
       fontFamily: "monospace",
       fontSize: "16px",
       color: COLOR.text,
@@ -174,13 +220,13 @@ export class RunScene extends Phaser.Scene {
         new Phaser.Geom.Rectangle(
           -((44 - btnW) / 2),
           -((44 - btnH) / 2),
-          44,
-          btnW,
+          Math.max(44, btnW),
+          Math.max(44, btnH),
         ),
         Phaser.Geom.Rectangle.Contains,
       );
     this.endTurnRect.on("pointerdown", () => this.endTurnAction());
-    this.add
+    this.endTurnLabelText = this.add
       .text(btnX + btnW / 2, btnY + btnH / 2, "End Turn", {
         fontFamily: "monospace",
         fontSize: "14px",
@@ -214,7 +260,7 @@ export class RunScene extends Phaser.Scene {
     this.panelLine2 = this.add.text(12, PANEL_Y + 56, "", {
       fontFamily: "monospace",
       fontSize: "14px",
-      color: COLOR.dim,
+      color: COLOR.textDim,
     });
 
     // Confirm button (hidden until a move is staged)
@@ -272,15 +318,20 @@ export class RunScene extends Phaser.Scene {
 
   private refreshTargeting(): void {
     this.targetingLayer.removeAll(true);
+    // Hide the targeting projection during the enemy's turn — the player
+    // can't move, so showing reachable tiles would be misleading.
+    if (this.state.activeTurn !== "player") return;
     const { position, currentAP } = this.state.protagonist;
+    const blocked = enemyTiles(this.state);
     const reachable = reachableTiles(
       position,
       currentAP,
       this.state.map,
+      blocked,
     ).filter((t) => !(t.col === position.col && t.row === position.row));
     for (const tile of reachable) {
       const px = tileToPixel(tile, this.gridCfg);
-      const cost = apCostToReach(position, tile, this.state.map);
+      const cost = apCostToReach(position, tile, this.state.map, blocked);
       const overlay = this.add
         .rectangle(px.x, px.y, TILE_SIZE, TILE_SIZE, COLOR.reachable, 0.18)
         .setOrigin(0, 0);
@@ -307,10 +358,37 @@ export class RunScene extends Phaser.Scene {
   }
 
   private refreshHUD(): void {
-    this.turnText.setText(`Turn ${this.state.turn}`);
+    this.turnText.setText(`T${this.state.turn}`);
     this.apText.setText(
       `AP ${this.state.protagonist.currentAP}/${this.state.protagonist.maxAP}`,
     );
+  }
+
+  private refreshTurnIndicator(): void {
+    if (this.state.activeTurn === "player") {
+      this.turnIndicatorText.setText("Your turn").setColor(COLOR.text);
+    } else {
+      this.turnIndicatorText
+        .setText("Enemy turn")
+        .setColor(COLOR.enemyTurnLabel);
+    }
+  }
+
+  private refreshEndTurnVisual(): void {
+    const enemyTurn = this.state.activeTurn === "enemy";
+    this.endTurnRect.setFillStyle(
+      enemyTurn ? COLOR.buttonBgDisabled : COLOR.buttonBg,
+    );
+    this.endTurnLabelText.setColor(enemyTurn ? COLOR.textDim : COLOR.text);
+  }
+
+  private refreshEnemySprites(): void {
+    for (const enemy of this.state.enemies) {
+      const sprite = this.enemySprites.get(enemy.id);
+      if (!sprite) continue;
+      const px = tileToPixel(enemy.position, this.gridCfg);
+      sprite.setPosition(px.x + TILE_SIZE / 2, px.y + TILE_SIZE / 2);
+    }
   }
 
   private refreshPanel(): void {
@@ -322,6 +400,22 @@ export class RunScene extends Phaser.Scene {
       this.panelLine2.setText(
         `Position (${this.state.protagonist.position.col}, ${this.state.protagonist.position.row})`,
       );
+    } else if (this.selection.kind === "enemy") {
+      const enemyId = this.selection.id;
+      const found = this.state.enemies.find((e) => e.id === enemyId);
+      if (found) {
+        this.panelTitle.setText(
+          found.kind === "melee" ? "Melee alien" : "Ranged alien",
+        );
+        this.panelLine1.setText(`AP ${found.currentAP}/${found.maxAP}`);
+        this.panelLine2.setText(
+          `Position (${found.position.col}, ${found.position.row})`,
+        );
+      } else {
+        this.panelTitle.setText("Enemy");
+        this.panelLine1.setText("(no longer present)");
+        this.panelLine2.setText("");
+      }
     } else {
       const tile =
         this.state.map.tiles[this.selection.pos.row]?.[this.selection.pos.col];
@@ -330,6 +424,7 @@ export class RunScene extends Phaser.Scene {
         this.state.protagonist.position,
         this.selection.pos,
         this.state.map,
+        enemyTiles(this.state),
       );
       const reachable =
         Number.isFinite(cost) &&
@@ -351,7 +446,8 @@ export class RunScene extends Phaser.Scene {
       this.staged !== null &&
       this.selection.kind === "tile" &&
       this.selection.pos.col === this.staged.col &&
-      this.selection.pos.row === this.staged.row;
+      this.selection.pos.row === this.staged.row &&
+      this.state.activeTurn === "player";
     this.confirmRect.setVisible(showConfirm);
     this.confirmLabel.setVisible(showConfirm);
   }
@@ -359,7 +455,7 @@ export class RunScene extends Phaser.Scene {
   // ----- Input handling -----
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
-    if (this.isInputLocked) return;
+    if (this.isOrientationLocked) return;
     const px = { x: pointer.worldX, y: pointer.worldY };
     if (
       !isInMapArea(
@@ -385,7 +481,30 @@ export class RunScene extends Phaser.Scene {
       return;
     }
 
-    const cost = apCostToReach(protagonist, tile, this.state.map);
+    // Enemy tap?
+    const enemy = this.state.enemies.find(
+      (e) => e.position.col === tile.col && e.position.row === tile.row,
+    );
+    if (enemy) {
+      this.setSelection({ kind: "enemy", id: enemy.id });
+      this.clearStaged();
+      return;
+    }
+
+    // During enemy turn, taps still update selection (read-only) but
+    // can't stage moves.
+    if (this.state.activeTurn === "enemy") {
+      this.setSelection({ kind: "tile", pos: tile });
+      this.clearStaged();
+      return;
+    }
+
+    const cost = apCostToReach(
+      protagonist,
+      tile,
+      this.state.map,
+      enemyTiles(this.state),
+    );
     const reachable =
       Number.isFinite(cost) && cost <= this.state.protagonist.currentAP;
 
@@ -395,7 +514,6 @@ export class RunScene extends Phaser.Scene {
       return;
     }
 
-    // Reachable: stage or commit
     if (
       this.staged !== null &&
       this.staged.col === tile.col &&
@@ -411,10 +529,7 @@ export class RunScene extends Phaser.Scene {
 
   private setSelection(sel: Selection): void {
     this.selection = sel;
-    this.events.emit("selection-changed", {
-      kind: sel.kind,
-      target: sel.kind === "tile" ? sel.pos : null,
-    });
+    this.events.emit("selection-changed", { selection: sel });
   }
 
   private clearStaged(): void {
@@ -425,6 +540,7 @@ export class RunScene extends Phaser.Scene {
 
   private commitStaged(): void {
     if (!this.staged) return;
+    if (this.state.activeTurn !== "player") return;
     const target = this.staged;
     const result = commitMove(this.state, target);
     if (!result.ok) return;
@@ -435,11 +551,11 @@ export class RunScene extends Phaser.Scene {
     this.events.emit("move-committed", {
       from,
       to: target,
-      cost: apCostToReach(from, target, this.state.map),
+      cost: apCostToReach(from, target, this.state.map, enemyTiles(this.state)),
     });
   }
 
-  private afterMove(): void {
+  private afterPlayerMove(): void {
     const px = tileToPixel(this.state.protagonist.position, this.gridCfg);
     this.protagonistSprite.setPosition(
       px.x + TILE_SIZE / 2,
@@ -450,18 +566,75 @@ export class RunScene extends Phaser.Scene {
     this.refreshHUD();
   }
 
+  // ----- Turn cycle -----
+
   private endTurnAction(): void {
     if (this.isInputLocked) return;
-    this.state = endTurn(this.state);
+    if (this.state.activeTurn !== "player") return;
+    // Player → enemy
+    this.state = advanceTurn(this.state);
     this.staged = null;
     this.setSelection({ kind: "protagonist" });
-    this.events.emit("turn-ended", { turn: this.state.turn });
+    this.events.emit("turn-changed", {
+      activeTurn: this.state.activeTurn,
+      turn: this.state.turn,
+    });
+    this.startEnemyTurnLoop();
   }
 
-  private afterTurn(): void {
-    this.refreshHUD();
+  private afterTurnChange(): void {
+    this.refreshTurnIndicator();
+    this.refreshEndTurnVisual();
     this.refreshTargeting();
     this.refreshStagedHalo();
+    this.refreshHUD();
+  }
+
+  private startEnemyTurnLoop(): void {
+    this.runEnemiesSequentially(0);
+  }
+
+  private runEnemiesSequentially(enemyIndex: number): void {
+    if (enemyIndex >= this.state.enemies.length) {
+      this.finishEnemyTurn();
+      return;
+    }
+    const enemy = this.state.enemies[enemyIndex];
+    this.tryEnemyStep(enemy.id, enemyIndex);
+  }
+
+  private tryEnemyStep(enemyId: string, enemyIndex: number): void {
+    const before = this.state.enemies.find((e) => e.id === enemyId)?.position;
+    const result = enemyStep(this.state, enemyId);
+    if (!result.moved) {
+      this.runEnemiesSequentially(enemyIndex + 1);
+      return;
+    }
+    this.state = result.state;
+    const after = this.state.enemies.find((e) => e.id === enemyId)?.position;
+    this.events.emit("enemy-moved", { enemyId, from: before, to: after });
+    this.time.delayedCall(ENEMY_STEP_DELAY_MS, () =>
+      this.tryEnemyStep(enemyId, enemyIndex),
+    );
+  }
+
+  private afterEnemyStep(): void {
+    this.refreshEnemySprites();
+    // If the active selection is the moving enemy, refresh its panel.
+    if (this.selection.kind === "enemy") {
+      this.refreshPanel();
+    }
+  }
+
+  private finishEnemyTurn(): void {
+    // Enemy → player
+    this.state = advanceTurn(this.state);
+    this.events.emit("turn-changed", {
+      activeTurn: this.state.activeTurn,
+      turn: this.state.turn,
+    });
+    // Reset selection to the protagonist for a clean turn start.
+    this.setSelection({ kind: "protagonist" });
   }
 
   // ----- Orientation -----
@@ -469,6 +642,6 @@ export class RunScene extends Phaser.Scene {
   private checkOrientation(): void {
     const isPortrait = this.scale.isPortrait;
     this.orientationOverlay.setVisible(!isPortrait);
-    this.isInputLocked = !isPortrait;
+    this.isOrientationLocked = !isPortrait;
   }
 }

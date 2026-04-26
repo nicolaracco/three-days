@@ -1,4 +1,5 @@
 {
   "MAX_AP": 4,
-  "MOVE_COST_PER_TILE": 1
+  "MOVE_COST_PER_TILE": 1,
+  "ENEMY_MAX_AP": 3
 }

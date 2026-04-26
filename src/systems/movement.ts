@@ -1,9 +1,11 @@
 /**
  * Movement logic — AP cost calculation and reachable-tile sets.
  *
- * Pure functions. No Phaser. Walls / blocking enemies will refine the
- * pathfinding model in spec 0003+; for now the map is all-floor and
- * costs are Manhattan-distance × `MOVE_COST_PER_TILE`.
+ * Pure functions. No Phaser. Walls (spec 0005+) and runtime occupants
+ * (enemies — passed via `blocked`) refine reachability. For the all-floor
+ * spec-0003 map without walls and with one enemy, costs are still
+ * Manhattan-distance × `MOVE_COST_PER_TILE`; when walls land this switches
+ * to a BFS over the grid.
  */
 
 import balance from "../data/balance.json";
@@ -13,19 +15,24 @@ import type { Day1Map } from "./map";
 
 const MOVE_COST_PER_TILE = balance.MOVE_COST_PER_TILE;
 
+function isBlocked(t: TilePos, blocked: TilePos[]): boolean {
+  return blocked.some((b) => b.col === t.col && b.row === t.row);
+}
+
 /**
- * AP cost to reach `to` from `from`. Returns `Infinity` for off-map targets.
- *
- * Manhattan distance × per-tile cost. Walls don't exist in spec 0002; once
- * they do, this returns `Infinity` (or runs a real pathfinder) when no path
- * is reachable.
+ * AP cost to reach `to` from `from`. Returns `Infinity` for off-map targets
+ * and for any target listed in `blocked` (e.g. an enemy's tile).
  */
 export function apCostToReach(
   from: TilePos,
   to: TilePos,
   map: Day1Map,
+  blocked: TilePos[] = [],
 ): number {
   if (to.col < 0 || to.col >= map.width || to.row < 0 || to.row >= map.height) {
+    return Infinity;
+  }
+  if (isBlocked(to, blocked)) {
     return Infinity;
   }
   const dist = Math.abs(to.col - from.col) + Math.abs(to.row - from.row);
@@ -33,17 +40,17 @@ export function apCostToReach(
 }
 
 /**
- * Every tile reachable from `from` within `ap` action points.
- *
- * In spec 0002 the map is all-floor with uniform 1 AP/tile cost, so the
- * reachable set is a Manhattan diamond clipped to map bounds — i.e.
- * `tilesInRange(from, ap, map)`. When walls and blocking enemies arrive
- * this becomes a BFS over the grid.
+ * Every tile reachable from `from` within `ap` action points, excluding any
+ * tile listed in `blocked`. The `from` tile itself is included (a no-op
+ * move costs 0 AP).
  */
 export function reachableTiles(
   from: TilePos,
   ap: number,
   map: Day1Map,
+  blocked: TilePos[] = [],
 ): TilePos[] {
-  return tilesInRange(from, Math.floor(ap / MOVE_COST_PER_TILE), map);
+  const inRange = tilesInRange(from, Math.floor(ap / MOVE_COST_PER_TILE), map);
+  if (blocked.length === 0) return inRange;
+  return inRange.filter((t) => !isBlocked(t, blocked));
 }
