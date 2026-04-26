@@ -84,7 +84,7 @@ Once these six steps work, the preview pipeline is "real" and ADR-0011 is honore
 
 ## Follow-ups
 
-- GDD §13 Day 1 currently says *"Hello-world commit pushed to itch.io as draft."* That deliverable is reframed: *"Hello-world deployed to Cloudflare Pages production URL **and** uploaded to itch.io as draft."* Two real ship paths, both validated on Day 1. (Out of scope for this ADR; tracked separately.)
+- ~~GDD §13 Day 1 currently says *"Hello-world commit pushed to itch.io as draft."*~~ **Done (GDD v0.3, 2026-04-26):** Day 1's deliverable is now *"Hello-world deployed to Cloudflare Pages production URL and verified on iPhone Safari portrait."* itch.io is deferred to its native home — Day 7 (the ship target). CF Pages owns the build-week iPhone test loop; itch.io owns the public ship.
 - Optional: add a `.github/workflows/ci.yml` that runs typecheck/lint/test as separate PR status checks. CF Pages's consolidated build is enough for now; this is a quality-of-life upgrade, not a correctness one.
 - Optional: automate the Day 7 itch.io upload via a GitHub Actions job using `butler push`. Requires `ITCH_API_KEY` in repo secrets. Defer to Day 6/7.
 - Optional: a custom domain (e.g. `three-days.example.com`) once the project has one. Free with Cloudflare; not load-bearing.
