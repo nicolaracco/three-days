@@ -1,6 +1,6 @@
 # Spec 0002: Click-to-move with AP on a static map
 
-**Status:** Draft
+**Status:** Approved
 **Roadmap day:** GDD §13 Day 1 (interactive deliverable; substrate landed in spec 0001)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture), ADR-0009 (testing discipline)
@@ -169,13 +169,7 @@ Each test maps to one or more `[unit]` criteria above; the implementer's report 
 
 ## Open questions
 
-The user (and their judgment) should resolve these before this spec moves to `Approved`:
-
-- **Tile size 32 px vs alternative.** GDD §10.1 says 32×32 art. Spec adopts 32 px on a 360-wide canvas → 11 visible columns with 4 px side margin. Confirm or override.
-- **Map size 11×15.** Default fits the playable area without scroll. Confirm.
-- **`commitMove` error style.** Throw, or return a tagged-union result (`{ ok: true, state } | { ok: false, reason }`)? Recommend tagged-union — keeps the function pure and testable. Confirm.
-- **Confirm button location.** In the bottom inspection panel (only when staged) is the spec's default. Alternative: a fixed top-right button. Defer to implementer's judgment unless you have a preference.
-- **Protagonist start position.** A fixed tile in the map data is the spec's default. Confirm.
+_(empty — all five questions resolved 2026-04-26, defaults accepted: tile size 32 / map 11×15, tagged-union `Result` for `commitMove`, Confirm button in bottom inspection panel, protagonist start position fixed in the map JSON. Spec body carries the canonical values.)_
 
 ## Done means
 
