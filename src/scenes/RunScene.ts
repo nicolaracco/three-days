@@ -53,7 +53,8 @@ const HUD_HEIGHT = viewport.HUD_HEIGHT;
 const PANEL_HEIGHT = viewport.PANEL_HEIGHT;
 const PANEL_Y = viewport.WORKING_HEIGHT - PANEL_HEIGHT;
 
-const ENEMY_STEP_DELAY_MS = 200;
+/** Per-step delay for both player and enemy tile-by-tile movement (ms). */
+const MOVE_STEP_DELAY_MS = 200;
 
 const COLOR = {
   sceneBg: "#0a0a0a",
@@ -85,6 +86,7 @@ export class RunScene extends Phaser.Scene {
   private staged: TilePos | null = null;
   private selection: Selection = { kind: "protagonist" };
   private isOrientationLocked = false;
+  private isAnimating = false;
 
   private targetingLayer!: Phaser.GameObjects.Container;
   private stagedLayer!: Phaser.GameObjects.Container;
@@ -111,7 +113,11 @@ export class RunScene extends Phaser.Scene {
 
   /** Single source of truth for "is the player allowed to interact?" */
   private get isInputLocked(): boolean {
-    return this.isOrientationLocked || this.state.activeTurn === "enemy";
+    return (
+      this.isOrientationLocked ||
+      this.state.activeTurn === "enemy" ||
+      this.isAnimating
+    );
   }
 
   create(): void {
@@ -456,6 +462,7 @@ export class RunScene extends Phaser.Scene {
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
     if (this.isOrientationLocked) return;
+    if (this.isAnimating) return;
     const px = { x: pointer.worldX, y: pointer.worldY };
     if (
       !isInMapArea(
@@ -541,21 +548,84 @@ export class RunScene extends Phaser.Scene {
   private commitStaged(): void {
     if (!this.staged) return;
     if (this.state.activeTurn !== "player") return;
+    if (this.isAnimating) return;
     const target = this.staged;
     const result = commitMove(this.state, target);
     if (!result.ok) return;
-    const from = this.state.protagonist.position;
-    this.state = result.state;
     this.staged = null;
     this.setSelection({ kind: "protagonist" });
-    this.events.emit("move-committed", {
-      from,
-      to: target,
-      cost: apCostToReach(from, target, this.state.map, enemyTiles(this.state)),
-    });
+    this.startPlayerMoveAnimation(result.path, result.state);
+  }
+
+  /**
+   * Animate the protagonist along the BFS path from `commitMove`.
+   *
+   * Walks one tile per `MOVE_STEP_DELAY_MS` (matching the enemy step
+   * cadence). Each step synthesizes an intermediate `RunState` with the
+   * sprite at `path[index]` and AP counted down by `index`, so the HUD
+   * counter ticks visibly. After the final step, the scene's state is
+   * set to `finalState` (matching exactly what `commitMove` produced)
+   * and `move-committed` fires for the post-animation refresh.
+   */
+  private startPlayerMoveAnimation(
+    path: TilePos[],
+    finalState: RunState,
+  ): void {
+    if (path.length < 2) {
+      // No movement to animate (degenerate; commitMove shouldn't return this).
+      this.state = finalState;
+      this.events.emit("move-committed", {
+        from: path[0],
+        to: path[0],
+        cost: 0,
+      });
+      return;
+    }
+    this.isAnimating = true;
+    this.targetingLayer.removeAll(true);
+    this.refreshConfirmVisibility();
+    this.advancePlayerStep(path, finalState, 1);
+  }
+
+  private advancePlayerStep(
+    path: TilePos[],
+    finalState: RunState,
+    index: number,
+  ): void {
+    if (index >= path.length) {
+      this.state = finalState;
+      this.isAnimating = false;
+      this.events.emit("move-committed", {
+        from: path[0],
+        to: path[path.length - 1],
+        cost: path.length - 1,
+      });
+      return;
+    }
+    const totalCost = path.length - 1;
+    this.state = {
+      ...finalState,
+      protagonist: {
+        ...finalState.protagonist,
+        position: path[index],
+        currentAP: finalState.protagonist.currentAP + (totalCost - index),
+      },
+    };
+    const px = tileToPixel(path[index], this.gridCfg);
+    this.protagonistSprite.setPosition(
+      px.x + TILE_SIZE / 2,
+      px.y + TILE_SIZE / 2,
+    );
+    this.refreshHUD();
+    this.refreshPanel();
+    this.time.delayedCall(MOVE_STEP_DELAY_MS, () =>
+      this.advancePlayerStep(path, finalState, index + 1),
+    );
   }
 
   private afterPlayerMove(): void {
+    // Sprite + HUD already updated by the animation; this hook does the
+    // post-animation cleanup (re-projects targeting, clears any stale halo).
     const px = tileToPixel(this.state.protagonist.position, this.gridCfg);
     this.protagonistSprite.setPosition(
       px.x + TILE_SIZE / 2,
@@ -564,6 +634,7 @@ export class RunScene extends Phaser.Scene {
     this.refreshTargeting();
     this.refreshStagedHalo();
     this.refreshHUD();
+    this.refreshPanel();
   }
 
   // ----- Turn cycle -----
@@ -613,7 +684,7 @@ export class RunScene extends Phaser.Scene {
     this.state = result.state;
     const after = this.state.enemies.find((e) => e.id === enemyId)?.position;
     this.events.emit("enemy-moved", { enemyId, from: before, to: after });
-    this.time.delayedCall(ENEMY_STEP_DELAY_MS, () =>
+    this.time.delayedCall(MOVE_STEP_DELAY_MS, () =>
       this.tryEnemyStep(enemyId, enemyIndex),
     );
   }

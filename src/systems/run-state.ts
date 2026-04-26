@@ -10,7 +10,7 @@ import balance from "../data/balance.json";
 import { type Enemy, loadDay1Enemies } from "./enemy";
 import type { TilePos } from "./grid";
 import { type Day1Map, loadDay1Map } from "./map";
-import { apCostToReach } from "./movement";
+import { bfs } from "./pathfind";
 
 export type ActiveTurn = "player" | "enemy";
 
@@ -27,9 +27,16 @@ export interface RunState {
   turn: number;
 }
 
-/** Tagged-union result for `commitMove`. Pure functional error handling. */
+/**
+ * Tagged-union result for `commitMove`. Pure functional error handling.
+ *
+ * On success, `path` is the BFS-shortest tile sequence from the
+ * protagonist's pre-move position to `target`, inclusive of both
+ * endpoints. The scene uses it to animate the move tile-by-tile;
+ * its length minus one equals the AP cost spent.
+ */
 export type CommitMoveResult =
-  | { ok: true; state: RunState }
+  | { ok: true; state: RunState; path: TilePos[] }
   | { ok: false; reason: "insufficient-ap" | "off-map" };
 
 /** Build a fresh `RunState` for a new run. Deterministic given the seed. */
@@ -60,19 +67,34 @@ export function enemyTiles(state: RunState): TilePos[] {
 
 /**
  * Move the protagonist to `target`, deducting AP. Returns a new state on
- * success; the input state is left unchanged. Returns a tagged error
- * result on failure. Enemy tiles are treated as blocked.
+ * success along with the BFS path the protagonist traversed; the input
+ * state is left unchanged. Returns a tagged error result on failure.
+ *
+ * Enemy tiles are treated as blocked. Cost is BFS path length, so a
+ * detour around an enemy correctly bills more AP than the Manhattan
+ * straight line would suggest.
  */
 export function commitMove(state: RunState, target: TilePos): CommitMoveResult {
-  const cost = apCostToReach(
-    state.protagonist.position,
-    target,
-    state.map,
-    enemyTiles(state),
-  );
-  if (!Number.isFinite(cost)) {
+  const blocked = enemyTiles(state);
+  // Off-map?
+  if (
+    target.col < 0 ||
+    target.col >= state.map.width ||
+    target.row < 0 ||
+    target.row >= state.map.height
+  ) {
     return { ok: false, reason: "off-map" };
   }
+  // Target on an enemy or otherwise blocked?
+  if (blocked.some((b) => b.col === target.col && b.row === target.row)) {
+    return { ok: false, reason: "off-map" };
+  }
+  // Path exists?
+  const path = bfs(state.protagonist.position, target, state.map, blocked);
+  if (path === null) {
+    return { ok: false, reason: "off-map" };
+  }
+  const cost = path.length - 1;
   if (cost > state.protagonist.currentAP) {
     return { ok: false, reason: "insufficient-ap" };
   }
@@ -86,6 +108,7 @@ export function commitMove(state: RunState, target: TilePos): CommitMoveResult {
         currentAP: state.protagonist.currentAP - cost,
       },
     },
+    path,
   };
 }
 

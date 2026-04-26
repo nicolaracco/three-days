@@ -1,17 +1,18 @@
 /**
  * Movement logic — AP cost calculation and reachable-tile sets.
  *
- * Pure functions. No Phaser. Walls (spec 0005+) and runtime occupants
- * (enemies — passed via `blocked`) refine reachability. For the all-floor
- * spec-0003 map without walls and with one enemy, costs are still
- * Manhattan-distance × `MOVE_COST_PER_TILE`; when walls land this switches
- * to a BFS over the grid.
+ * Pure functions. No Phaser. Costs are BFS path length on the 4-connected
+ * grid, accounting for walls (when they land in spec 0005+) and runtime
+ * occupants in `blocked` (e.g. enemies). For the all-floor spec-0003 map
+ * with one enemy, BFS distance equals Manhattan distance everywhere
+ * except for tiles whose direct route is blocked — there the BFS detour
+ * cost is the honest number to show the player.
  */
 
 import balance from "../data/balance.json";
-import type { TilePos } from "./grid";
-import { tilesInRange } from "./grid";
+import { tilesInRange, type TilePos } from "./grid";
 import type { Day1Map } from "./map";
+import { bfs } from "./pathfind";
 
 const MOVE_COST_PER_TILE = balance.MOVE_COST_PER_TILE;
 
@@ -20,8 +21,13 @@ function isBlocked(t: TilePos, blocked: TilePos[]): boolean {
 }
 
 /**
- * AP cost to reach `to` from `from`. Returns `Infinity` for off-map targets
- * and for any target listed in `blocked` (e.g. an enemy's tile).
+ * AP cost to reach `to` from `from`, accounting for walls and `blocked`
+ * tiles. Returns `Infinity` for off-map targets, blocked targets, or any
+ * target with no valid path.
+ *
+ * The cost is `(path.length - 1) * MOVE_COST_PER_TILE`, where path is the
+ * BFS shortest path. With `MOVE_COST_PER_TILE = 1` this equals "tiles
+ * traversed."
  */
 export function apCostToReach(
   from: TilePos,
@@ -35,14 +41,18 @@ export function apCostToReach(
   if (isBlocked(to, blocked)) {
     return Infinity;
   }
-  const dist = Math.abs(to.col - from.col) + Math.abs(to.row - from.row);
-  return dist * MOVE_COST_PER_TILE;
+  const path = bfs(from, to, map, blocked);
+  if (path === null) return Infinity;
+  return (path.length - 1) * MOVE_COST_PER_TILE;
 }
 
 /**
- * Every tile reachable from `from` within `ap` action points, excluding any
- * tile listed in `blocked`. The `from` tile itself is included (a no-op
- * move costs 0 AP).
+ * Every tile reachable from `from` within `ap` action points, accounting
+ * for walls and `blocked` tiles. The `from` tile itself is included.
+ *
+ * Implementation: take Manhattan-radius candidates as an upper bound, then
+ * filter by BFS cost. Honest under detours (an enemy in the way correctly
+ * extends the cost or removes the tile from the set entirely).
  */
 export function reachableTiles(
   from: TilePos,
@@ -50,7 +60,14 @@ export function reachableTiles(
   map: Day1Map,
   blocked: TilePos[] = [],
 ): TilePos[] {
-  const inRange = tilesInRange(from, Math.floor(ap / MOVE_COST_PER_TILE), map);
-  if (blocked.length === 0) return inRange;
-  return inRange.filter((t) => !isBlocked(t, blocked));
+  const candidates = tilesInRange(
+    from,
+    Math.floor(ap / MOVE_COST_PER_TILE),
+    map,
+  );
+  return candidates.filter((t) => {
+    if (t.col === from.col && t.row === from.row) return true;
+    const cost = apCostToReach(from, t, map, blocked);
+    return Number.isFinite(cost) && cost <= ap;
+  });
 }

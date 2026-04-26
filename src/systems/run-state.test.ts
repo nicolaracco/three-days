@@ -40,6 +40,21 @@ describe("commitMove", () => {
     expect(result.state.protagonist.currentAP).toBe(balance.MAX_AP - 2);
   });
 
+  test("happy path: returns the BFS path inclusive of both endpoints", () => {
+    const state = createRunState({ seed: 1 });
+    const target = {
+      col: state.protagonist.position.col + 2,
+      row: state.protagonist.position.row,
+    };
+    const result = commitMove(state, target);
+    if (!result.ok) throw new Error("unreachable");
+    // path length === cost + 1; first tile is the protagonist's pre-move
+    // position; last tile is the target.
+    expect(result.path).toHaveLength(3);
+    expect(result.path[0]).toEqual(state.protagonist.position);
+    expect(result.path[result.path.length - 1]).toEqual(target);
+  });
+
   test("happy path leaves the input state unchanged (immutable)", () => {
     const state = createRunState({ seed: 1 });
     const before = state.protagonist.position;
