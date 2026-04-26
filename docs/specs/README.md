@@ -26,4 +26,4 @@ Specs are numbered in the order they're authored, not in the order of the roadma
 |------|------------------------------------------------------------------------------------|--------|-------------|
 | 0001 | [Project scaffold and Cloudflare preview pipeline](0001-project-scaffold-and-preview.md) | Done     | §13 Day 1   |
 | 0002 | [Click-to-move with AP on a static map](0002-click-to-move-with-ap.md)                  | Done     | §13 Day 1   |
-| 0003 | [One enemy pathfinds](0003-one-enemy-pathfinds.md)                                      | Approved | §13 Day 1   |
+| 0003 | [One enemy pathfinds](0003-one-enemy-pathfinds.md)                                      | Done     | §13 Day 1   |
