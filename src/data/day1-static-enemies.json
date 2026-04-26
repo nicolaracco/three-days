@@ -2,6 +2,7 @@
   {
     "id": "alien-1",
     "kind": "melee",
-    "position": { "col": 5, "row": 11 }
+    "position": { "col": 5, "row": 11 },
+    "weaponId": "improvised-melee"
   }
 ]

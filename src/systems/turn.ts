@@ -1,15 +1,16 @@
 /**
- * Turn execution — enemy AI step / run-to-completion.
+ * Turn execution — enemy AI step / act / run-to-completion.
  *
- * Spec 0003 only covers movement: each enemy walks toward the protagonist
- * along its BFS path, one tile at a time, stopping adjacent (no attack —
- * combat lands in spec 0004+) or when AP runs out.
- *
- * `enemyStep` advances one enemy by one tile (used by the scene to
- * animate moves with a per-step delay). `runEnemyTurn` runs all enemies
- * to completion in one go (used in tests and headless contexts).
+ * - `enemyStep` is the **move-only** primitive: walks one tile along the
+ *   BFS path toward the protagonist, or returns `moved: false`.
+ * - `enemyAct` is the **decision** layer (spec 0004+): if the enemy can
+ *   attack (adjacent + AP ≥ weapon.apCost), it commits the attack;
+ *   otherwise it falls back to `enemyStep`. Returns a tagged-union so
+ *   the scene knows whether to play a hit-flash or a move-tween.
+ * - `runEnemyTurn` loops `enemyAct` per enemy until each is idle.
  */
 
+import { commitAttack } from "./combat";
 import type { TilePos } from "./grid";
 import { bfs } from "./pathfind";
 import type { RunState } from "./run-state";
@@ -19,21 +20,35 @@ export interface EnemyStepResult {
   moved: boolean;
 }
 
+export type EnemyActResult =
+  | {
+      kind: "attacked";
+      state: RunState;
+      attackerId: string;
+      damage: number;
+      killed: boolean;
+    }
+  | {
+      kind: "moved";
+      state: RunState;
+      enemyId: string;
+      from: TilePos;
+      to: TilePos;
+    }
+  | { kind: "idle"; state: RunState; enemyId: string };
+
 function tilesOfOtherEnemies(state: RunState, exceptId: string): TilePos[] {
   return state.enemies.filter((e) => e.id !== exceptId).map((e) => e.position);
 }
 
 /**
- * Advance one enemy by at most one tile toward the protagonist.
+ * Advance one enemy by at most one tile toward the protagonist (move-only).
  *
- * Returns `moved: false` when the enemy can't or shouldn't act:
+ * Returns `moved: false` when the enemy can't or shouldn't move:
  * - Unknown enemyId.
  * - Enemy has 0 AP.
  * - Enemy is already adjacent to the protagonist (path length 2).
- * - No path exists (e.g. fully blocked by other enemies).
- *
- * Returns a fresh `RunState` with the enemy moved one tile and its AP
- * decremented otherwise. The input state is left unchanged.
+ * - No path exists.
  */
 export function enemyStep(state: RunState, enemyId: string): EnemyStepResult {
   const enemy = state.enemies.find((e) => e.id === enemyId);
@@ -48,8 +63,6 @@ export function enemyStep(state: RunState, enemyId: string): EnemyStepResult {
     blocked,
   );
   if (!path || path.length <= 2) {
-    // path === null: unreachable. path.length === 1: enemy on protagonist (impossible).
-    // path.length === 2: already adjacent — don't step (would land on protagonist).
     return { state, moved: false };
   }
 
@@ -68,22 +81,69 @@ export function enemyStep(state: RunState, enemyId: string): EnemyStepResult {
 }
 
 /**
+ * Decide and apply one enemy action: attack if adjacent + AP-sufficient,
+ * else move one tile, else idle.
+ *
+ * Returns the new state plus a `kind` discriminator so callers (the scene)
+ * can react: animate a hit flash for `"attacked"`, animate a sprite move
+ * for `"moved"`, advance to the next enemy for `"idle"`.
+ */
+export function enemyAct(state: RunState, enemyId: string): EnemyActResult {
+  const enemy = state.enemies.find((e) => e.id === enemyId);
+  if (!enemy) return { kind: "idle", state, enemyId };
+  if (enemy.currentAP <= 0) return { kind: "idle", state, enemyId };
+
+  // Try attack first.
+  const attack = commitAttack(state, {
+    attackerSide: "enemy",
+    attackerId: enemyId,
+    weaponId: enemy.weaponId,
+    targetId: "protagonist",
+  });
+  if (attack.ok) {
+    return {
+      kind: "attacked",
+      state: attack.state,
+      attackerId: enemyId,
+      damage: attack.damage,
+      killed: attack.killed,
+    };
+  }
+
+  // Else try a move step.
+  const stepResult = enemyStep(state, enemyId);
+  if (stepResult.moved) {
+    const moved = stepResult.state.enemies.find((e) => e.id === enemyId);
+    return {
+      kind: "moved",
+      state: stepResult.state,
+      enemyId,
+      from: enemy.position,
+      to: moved?.position ?? enemy.position,
+    };
+  }
+
+  return { kind: "idle", state, enemyId };
+}
+
+/**
  * Run every enemy's full turn to completion.
  *
- * For each enemy in order, call `enemyStep` repeatedly until the enemy
- * stops (adjacent, no AP, or no path). Returns the final state.
+ * For each enemy in order, call `enemyAct` repeatedly until the enemy is
+ * idle. Returns the final state. Stops early if the protagonist's HP
+ * drops to 0 — no more enemies should act after the player has died.
  *
- * The scene typically prefers calling `enemyStep` itself in a loop with
- * a per-step delay so that moves are visible. `runEnemyTurn` is the
- * headless equivalent — used in tests and for any future "fast-forward"
- * mode.
+ * The scene typically calls `enemyAct` itself in a loop with a per-step
+ * delay so that moves and attacks are visible. `runEnemyTurn` is the
+ * headless equivalent.
  */
 export function runEnemyTurn(state: RunState): RunState {
   let current = state;
   for (const enemy of state.enemies) {
     while (true) {
-      const result = enemyStep(current, enemy.id);
-      if (!result.moved) break;
+      if (current.protagonist.currentHP <= 0) return current;
+      const result = enemyAct(current, enemy.id);
+      if (result.kind === "idle") break;
       current = result.state;
     }
   }

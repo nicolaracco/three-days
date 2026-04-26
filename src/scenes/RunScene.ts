@@ -1,19 +1,18 @@
 /**
  * RunScene — the playable scene.
  *
- * Spec 0002 substrate (rendering, selection, action targeting, confirm
- * flow, orientation overlay) is unchanged. Spec 0003 adds:
+ * Substrate from spec 0001/0002/0003: rendering, selection, action
+ * targeting, confirm flow, orientation overlay, enemy pathfinding, turn
+ * cycle, player tile-by-tile movement animation.
  *
- * - One melee enemy on the map (placeholder warm-red circle).
- * - Tapping the enemy moves selection to it; panel shows kind / position / AP.
- * - The enemy's tile is excluded from the reachable set; targeting overlays
- *   skip it.
- * - Top HUD turn-order indicator ("Your turn" / "Enemy turn").
- * - End Turn flow: advanceTurn → step the enemy with a 200 ms delay between
- *   tile moves → advanceTurn back to the player.
- * - End Turn button is greyed and non-interactive during the enemy turn.
- * - Tile taps still update the selection during enemy turn (reads are free)
- *   but cannot stage or commit moves.
+ * Spec 0004 adds:
+ * - HP bars above each unit (placeholder bg + fg rectangles).
+ * - Player attack flow: tap an adjacent enemy → "Attack (2 AP)" button
+ *   in the panel → stages the attack → tap again or "Confirm Attack" →
+ *   commits via commitAttack. White flash on the damaged target.
+ * - Single action-button slot in the panel (Move / Attack / Confirm).
+ * - Enemy turn loop now uses enemyAct (attack-when-adjacent, else move).
+ * - Death overlay when the protagonist's HP drops to 0.
  *
  * Per ADR-0008: tile interaction goes through a single scene-level
  * `pointerdown` handler that calls `pixelToTile`. Tiles are dumb
@@ -21,11 +20,13 @@
  * their own ≥ 44×44 hit areas.
  *
  * Per ADR-0004: scene logic stays thin. State changes call into pure
- * reducers in `systems/run-state.ts` and `systems/turn.ts`.
+ * reducers in `systems/run-state.ts`, `systems/combat.ts`, `systems/turn.ts`.
  */
 
 import Phaser from "phaser";
+import balance from "../data/balance.json";
 import viewport from "../data/viewport.json";
+import { commitAttack } from "../systems/combat";
 import {
   type GridConfig,
   type TilePos,
@@ -41,7 +42,7 @@ import {
   createRunState,
   enemyTiles,
 } from "../systems/run-state";
-import { enemyStep } from "../systems/turn";
+import { enemyAct } from "../systems/turn";
 
 const TILE_SIZE = viewport.TILE_SIZE;
 const MAP_WIDTH_TILES = 11;
@@ -55,6 +56,8 @@ const PANEL_Y = viewport.WORKING_HEIGHT - PANEL_HEIGHT;
 
 /** Per-step delay for both player and enemy tile-by-tile movement (ms). */
 const MOVE_STEP_DELAY_MS = 200;
+/** Duration of the white hit/hurt flash on a damaged unit (ms). */
+const FLASH_MS = 200;
 
 const COLOR = {
   sceneBg: "#0a0a0a",
@@ -68,11 +71,16 @@ const COLOR = {
   hudBg: 0x111111,
   panelBg: 0x111111,
   buttonBg: 0x2a4a3a,
+  buttonBgAttack: 0x4a2a2a,
   buttonBgDisabled: 0x2a2a2a,
   text: "#ffffff",
   textDim: "#888888",
   apLabel: "#ffd166",
   enemyTurnLabel: "#e57373",
+  hpBarBg: 0x000000,
+  hpBarFg: 0x6abf6a,
+  hpBarFgEnemy: 0xc05050,
+  flash: 0xffffff,
 } as const;
 
 type Selection =
@@ -80,10 +88,26 @@ type Selection =
   | { kind: "tile"; pos: TilePos }
   | { kind: "enemy"; id: string };
 
+type Staged =
+  | { kind: "move"; pos: TilePos }
+  | { kind: "attack"; targetId: string };
+
+type ActionMode = "confirm-move" | "confirm-attack" | "stage-attack" | "hidden";
+
+interface HpBar {
+  bg: Phaser.GameObjects.Rectangle;
+  fg: Phaser.GameObjects.Rectangle;
+  baseColor: number;
+}
+
+const HP_BAR_WIDTH = TILE_SIZE - 8;
+const HP_BAR_HEIGHT = 4;
+const HP_BAR_OFFSET_Y = -8;
+
 export class RunScene extends Phaser.Scene {
   private state!: RunState;
   private gridCfg!: GridConfig;
-  private staged: TilePos | null = null;
+  private staged: Staged | null = null;
   private selection: Selection = { kind: "protagonist" };
   private isOrientationLocked = false;
   private isAnimating = false;
@@ -91,21 +115,27 @@ export class RunScene extends Phaser.Scene {
   private targetingLayer!: Phaser.GameObjects.Container;
   private stagedLayer!: Phaser.GameObjects.Container;
   private protagonistSprite!: Phaser.GameObjects.Arc;
+  private protagonistHpBar!: HpBar;
   private enemySprites: Map<string, Phaser.GameObjects.Arc> = new Map();
+  private enemyHpBars: Map<string, HpBar> = new Map();
 
   private turnIndicatorText!: Phaser.GameObjects.Text;
   private turnText!: Phaser.GameObjects.Text;
   private apText!: Phaser.GameObjects.Text;
+  private hpText!: Phaser.GameObjects.Text;
   private endTurnRect!: Phaser.GameObjects.Rectangle;
   private endTurnLabelText!: Phaser.GameObjects.Text;
 
   private panelTitle!: Phaser.GameObjects.Text;
   private panelLine1!: Phaser.GameObjects.Text;
   private panelLine2!: Phaser.GameObjects.Text;
-  private confirmRect!: Phaser.GameObjects.Rectangle;
-  private confirmLabel!: Phaser.GameObjects.Text;
+  private actionRect!: Phaser.GameObjects.Rectangle;
+  private actionLabel!: Phaser.GameObjects.Text;
+  private currentActionMode: ActionMode = "hidden";
 
   private orientationOverlay!: Phaser.GameObjects.Container;
+  private deathOverlay!: Phaser.GameObjects.Container;
+  private deathOverlayText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: "RunScene" });
@@ -116,7 +146,8 @@ export class RunScene extends Phaser.Scene {
     return (
       this.isOrientationLocked ||
       this.state.activeTurn === "enemy" ||
-      this.isAnimating
+      this.isAnimating ||
+      this.state.protagonist.currentHP <= 0
     );
   }
 
@@ -136,22 +167,14 @@ export class RunScene extends Phaser.Scene {
     this.renderHUD();
     this.renderPanel();
     this.renderOrientationOverlay();
+    this.renderDeathOverlay();
 
     this.input.on("pointerdown", this.handlePointerDown, this);
-    this.events.on("selection-changed", this.refreshPanel, this);
-    this.events.on("move-staged", this.refreshStagedHalo, this);
-    this.events.on("move-committed", this.afterPlayerMove, this);
-    this.events.on("turn-changed", this.afterTurnChange, this);
-    this.events.on("enemy-moved", this.afterEnemyStep, this);
 
     this.scale.on("orientationchange", this.checkOrientation, this);
     this.checkOrientation();
 
-    this.refreshTargeting();
-    this.refreshPanel();
-    this.refreshHUD();
-    this.refreshTurnIndicator();
-    this.refreshEndTurnVisual();
+    this.refreshAll();
   }
 
   // ----- Static rendering -----
@@ -180,6 +203,8 @@ export class RunScene extends Phaser.Scene {
         COLOR.enemyMelee,
       );
       this.enemySprites.set(enemy.id, sprite);
+      const bar = this.makeHpBar(px, COLOR.hpBarFgEnemy);
+      this.enemyHpBars.set(enemy.id, bar);
     }
   }
 
@@ -191,6 +216,20 @@ export class RunScene extends Phaser.Scene {
       TILE_SIZE / 2 - 4,
       COLOR.protagonist,
     );
+    this.protagonistHpBar = this.makeHpBar(px, COLOR.hpBarFg);
+  }
+
+  private makeHpBar(tilePx: { x: number; y: number }, fgColor: number): HpBar {
+    const x = tilePx.x + (TILE_SIZE - HP_BAR_WIDTH) / 2;
+    const y = tilePx.y + HP_BAR_OFFSET_Y;
+    const bg = this.add
+      .rectangle(x, y, HP_BAR_WIDTH, HP_BAR_HEIGHT, COLOR.hpBarBg)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR.tileBorder);
+    const fg = this.add
+      .rectangle(x, y, HP_BAR_WIDTH, HP_BAR_HEIGHT, fgColor)
+      .setOrigin(0, 0);
+    return { bg, fg, baseColor: fgColor };
   }
 
   private renderHUD(): void {
@@ -198,19 +237,24 @@ export class RunScene extends Phaser.Scene {
       .rectangle(0, 0, viewport.WORKING_WIDTH, HUD_HEIGHT, COLOR.hudBg)
       .setOrigin(0, 0);
 
-    this.turnIndicatorText = this.add.text(8, 12, "", {
+    this.turnIndicatorText = this.add.text(8, 4, "", {
       fontFamily: "monospace",
-      fontSize: "16px",
+      fontSize: "13px",
       color: COLOR.text,
     });
-    this.turnText = this.add.text(120, 12, "", {
+    this.hpText = this.add.text(8, 22, "", {
       fontFamily: "monospace",
-      fontSize: "16px",
+      fontSize: "13px",
       color: COLOR.text,
     });
-    this.apText = this.add.text(160, 12, "", {
+    this.turnText = this.add.text(120, 4, "", {
       fontFamily: "monospace",
-      fontSize: "16px",
+      fontSize: "13px",
+      color: COLOR.text,
+    });
+    this.apText = this.add.text(120, 22, "", {
+      fontFamily: "monospace",
+      fontSize: "13px",
       color: COLOR.text,
     });
 
@@ -269,12 +313,16 @@ export class RunScene extends Phaser.Scene {
       color: COLOR.textDim,
     });
 
-    // Confirm button (hidden until a move is staged)
-    const btnW = 96;
+    // Single action button slot. Text and color change with mode:
+    //   "Confirm Move" — when a move is staged
+    //   "Confirm Attack" — when an attack is staged
+    //   "Attack (2 AP)" — when an adjacent enemy is selected and AP allows
+    //   hidden — otherwise
+    const btnW = 132;
     const btnH = 36;
     const btnX = viewport.WORKING_WIDTH - btnW - 12;
     const btnY = PANEL_Y + (PANEL_HEIGHT - btnH) / 2;
-    this.confirmRect = this.add
+    this.actionRect = this.add
       .rectangle(btnX, btnY, btnW, btnH, COLOR.buttonBg)
       .setOrigin(0, 0)
       .setInteractive(
@@ -282,9 +330,9 @@ export class RunScene extends Phaser.Scene {
         Phaser.Geom.Rectangle.Contains,
       )
       .setVisible(false);
-    this.confirmRect.on("pointerdown", () => this.commitStaged());
-    this.confirmLabel = this.add
-      .text(btnX + btnW / 2, btnY + btnH / 2, "Confirm", {
+    this.actionRect.on("pointerdown", () => this.handleActionButton());
+    this.actionLabel = this.add
+      .text(btnX + btnW / 2, btnY + btnH / 2, "", {
         fontFamily: "monospace",
         fontSize: "16px",
         color: COLOR.text,
@@ -320,13 +368,45 @@ export class RunScene extends Phaser.Scene {
     this.orientationOverlay.setDepth(1000).setVisible(false);
   }
 
+  private renderDeathOverlay(): void {
+    const bg = this.add
+      .rectangle(
+        0,
+        0,
+        viewport.WORKING_WIDTH,
+        viewport.WORKING_HEIGHT,
+        0x000000,
+        0.94,
+      )
+      .setOrigin(0, 0);
+    this.deathOverlayText = this.add
+      .text(viewport.WORKING_WIDTH / 2, viewport.WORKING_HEIGHT / 2, "", {
+        fontFamily: "monospace",
+        fontSize: "18px",
+        color: COLOR.text,
+        align: "center",
+        wordWrap: { width: viewport.WORKING_WIDTH - 32 },
+      })
+      .setOrigin(0.5, 0.5);
+    this.deathOverlay = this.add.container(0, 0, [bg, this.deathOverlayText]);
+    this.deathOverlay.setDepth(1001).setVisible(false);
+  }
+
   // ----- Refresh routines -----
+
+  private refreshAll(): void {
+    this.refreshTargeting();
+    this.refreshHpBars();
+    this.refreshHUD();
+    this.refreshTurnIndicator();
+    this.refreshEndTurnVisual();
+    this.refreshPanel();
+  }
 
   private refreshTargeting(): void {
     this.targetingLayer.removeAll(true);
-    // Hide the targeting projection during the enemy's turn — the player
-    // can't move, so showing reachable tiles would be misleading.
     if (this.state.activeTurn !== "player") return;
+    if (this.state.protagonist.currentHP <= 0) return;
     const { position, currentAP } = this.state.protagonist;
     const blocked = enemyTiles(this.state);
     const reachable = reachableTiles(
@@ -355,7 +435,9 @@ export class RunScene extends Phaser.Scene {
   private refreshStagedHalo(): void {
     this.stagedLayer.removeAll(true);
     if (!this.staged) return;
-    const px = tileToPixel(this.staged, this.gridCfg);
+    const tile = this.getStagedTile();
+    if (!tile) return;
+    const px = tileToPixel(tile, this.gridCfg);
     const halo = this.add
       .rectangle(px.x, px.y, TILE_SIZE, TILE_SIZE)
       .setOrigin(0, 0)
@@ -363,10 +445,21 @@ export class RunScene extends Phaser.Scene {
     this.stagedLayer.add(halo);
   }
 
+  private getStagedTile(): TilePos | null {
+    if (!this.staged) return null;
+    if (this.staged.kind === "move") return this.staged.pos;
+    const targetId = this.staged.targetId;
+    const e = this.state.enemies.find((x) => x.id === targetId);
+    return e?.position ?? null;
+  }
+
   private refreshHUD(): void {
     this.turnText.setText(`T${this.state.turn}`);
     this.apText.setText(
       `AP ${this.state.protagonist.currentAP}/${this.state.protagonist.maxAP}`,
+    );
+    this.hpText.setText(
+      `HP ${Math.max(0, this.state.protagonist.currentHP)}/${this.state.protagonist.maxHP}`,
     );
   }
 
@@ -381,19 +474,65 @@ export class RunScene extends Phaser.Scene {
   }
 
   private refreshEndTurnVisual(): void {
-    const enemyTurn = this.state.activeTurn === "enemy";
+    const disabled =
+      this.state.activeTurn === "enemy" ||
+      this.state.protagonist.currentHP <= 0;
     this.endTurnRect.setFillStyle(
-      enemyTurn ? COLOR.buttonBgDisabled : COLOR.buttonBg,
+      disabled ? COLOR.buttonBgDisabled : COLOR.buttonBg,
     );
-    this.endTurnLabelText.setColor(enemyTurn ? COLOR.textDim : COLOR.text);
+    this.endTurnLabelText.setColor(disabled ? COLOR.textDim : COLOR.text);
   }
 
   private refreshEnemySprites(): void {
+    // Despawn destroyed enemies' sprites + bars.
+    const liveIds = new Set(this.state.enemies.map((e) => e.id));
+    for (const id of Array.from(this.enemySprites.keys())) {
+      if (!liveIds.has(id)) {
+        this.enemySprites.get(id)?.destroy();
+        this.enemySprites.delete(id);
+        const bar = this.enemyHpBars.get(id);
+        bar?.bg.destroy();
+        bar?.fg.destroy();
+        this.enemyHpBars.delete(id);
+      }
+    }
+    // Update positions of surviving enemies.
     for (const enemy of this.state.enemies) {
       const sprite = this.enemySprites.get(enemy.id);
       if (!sprite) continue;
       const px = tileToPixel(enemy.position, this.gridCfg);
       sprite.setPosition(px.x + TILE_SIZE / 2, px.y + TILE_SIZE / 2);
+      const bar = this.enemyHpBars.get(enemy.id);
+      if (bar) {
+        const barX = px.x + (TILE_SIZE - HP_BAR_WIDTH) / 2;
+        const barY = px.y + HP_BAR_OFFSET_Y;
+        bar.bg.setPosition(barX, barY);
+        bar.fg.setPosition(barX, barY);
+      }
+    }
+  }
+
+  private refreshHpBars(): void {
+    // Protagonist
+    const px = tileToPixel(this.state.protagonist.position, this.gridCfg);
+    const protagonistBarX = px.x + (TILE_SIZE - HP_BAR_WIDTH) / 2;
+    const protagonistBarY = px.y + HP_BAR_OFFSET_Y;
+    this.protagonistHpBar.bg.setPosition(protagonistBarX, protagonistBarY);
+    this.protagonistHpBar.fg.setPosition(protagonistBarX, protagonistBarY);
+    const protRatio =
+      this.state.protagonist.maxHP === 0
+        ? 0
+        : Math.max(0, this.state.protagonist.currentHP) /
+          this.state.protagonist.maxHP;
+    this.protagonistHpBar.fg.setSize(HP_BAR_WIDTH * protRatio, HP_BAR_HEIGHT);
+
+    // Enemies
+    for (const enemy of this.state.enemies) {
+      const bar = this.enemyHpBars.get(enemy.id);
+      if (!bar) continue;
+      const ratio =
+        enemy.maxHP === 0 ? 0 : Math.max(0, enemy.currentHP) / enemy.maxHP;
+      bar.fg.setSize(HP_BAR_WIDTH * ratio, HP_BAR_HEIGHT);
     }
   }
 
@@ -401,7 +540,7 @@ export class RunScene extends Phaser.Scene {
     if (this.selection.kind === "protagonist") {
       this.panelTitle.setText("Protagonist");
       this.panelLine1.setText(
-        `AP ${this.state.protagonist.currentAP}/${this.state.protagonist.maxAP}`,
+        `HP ${Math.max(0, this.state.protagonist.currentHP)}/${this.state.protagonist.maxHP} · AP ${this.state.protagonist.currentAP}/${this.state.protagonist.maxAP}`,
       );
       this.panelLine2.setText(
         `Position (${this.state.protagonist.position.col}, ${this.state.protagonist.position.row})`,
@@ -413,13 +552,15 @@ export class RunScene extends Phaser.Scene {
         this.panelTitle.setText(
           found.kind === "melee" ? "Melee alien" : "Ranged alien",
         );
-        this.panelLine1.setText(`AP ${found.currentAP}/${found.maxAP}`);
+        this.panelLine1.setText(
+          `HP ${Math.max(0, found.currentHP)}/${found.maxHP} · AP ${found.currentAP}/${found.maxAP}`,
+        );
         this.panelLine2.setText(
           `Position (${found.position.col}, ${found.position.row})`,
         );
       } else {
         this.panelTitle.setText("Enemy");
-        this.panelLine1.setText("(no longer present)");
+        this.panelLine1.setText("(despawned)");
         this.panelLine2.setText("");
       }
     } else {
@@ -444,18 +585,73 @@ export class RunScene extends Phaser.Scene {
         reachable ? `Reachable · cost ${cost} AP` : "Out of range",
       );
     }
-    this.refreshConfirmVisibility();
+    this.refreshActionButton();
+    this.refreshStagedHalo();
   }
 
-  private refreshConfirmVisibility(): void {
-    const showConfirm =
-      this.staged !== null &&
-      this.selection.kind === "tile" &&
-      this.selection.pos.col === this.staged.col &&
-      this.selection.pos.row === this.staged.row &&
-      this.state.activeTurn === "player";
-    this.confirmRect.setVisible(showConfirm);
-    this.confirmLabel.setVisible(showConfirm);
+  private refreshActionButton(): void {
+    const mode = this.computeActionMode();
+    this.currentActionMode = mode;
+    if (mode === "hidden") {
+      this.actionRect.setVisible(false);
+      this.actionLabel.setVisible(false);
+      return;
+    }
+    this.actionRect.setVisible(true);
+    this.actionLabel.setVisible(true);
+    if (mode === "confirm-move") {
+      this.actionLabel.setText("Confirm Move").setColor(COLOR.text);
+      this.actionRect.setFillStyle(COLOR.buttonBg);
+    } else if (mode === "confirm-attack") {
+      this.actionLabel.setText("Confirm Attack").setColor(COLOR.text);
+      this.actionRect.setFillStyle(COLOR.buttonBgAttack);
+    } else {
+      this.actionLabel
+        .setText(`Attack (${balance.ATTACK_AP_COST} AP)`)
+        .setColor(COLOR.text);
+      this.actionRect.setFillStyle(COLOR.buttonBgAttack);
+    }
+  }
+
+  private computeActionMode(): ActionMode {
+    if (this.state.activeTurn !== "player") return "hidden";
+    if (this.state.protagonist.currentHP <= 0) return "hidden";
+    if (this.staged?.kind === "move") {
+      if (
+        this.selection.kind === "tile" &&
+        this.selection.pos.col === this.staged.pos.col &&
+        this.selection.pos.row === this.staged.pos.row
+      ) {
+        return "confirm-move";
+      }
+      return "hidden";
+    }
+    if (this.staged?.kind === "attack") {
+      if (
+        this.selection.kind === "enemy" &&
+        this.selection.id === this.staged.targetId
+      ) {
+        return "confirm-attack";
+      }
+      return "hidden";
+    }
+    // No stage: maybe show "Attack (2 AP)" if selection is an adjacent enemy
+    // and player has the AP.
+    if (this.selection.kind === "enemy") {
+      const enemyId = this.selection.id;
+      const target = this.state.enemies.find((e) => e.id === enemyId);
+      if (!target) return "hidden";
+      const dist =
+        Math.abs(target.position.col - this.state.protagonist.position.col) +
+        Math.abs(target.position.row - this.state.protagonist.position.row);
+      if (
+        dist === 1 &&
+        this.state.protagonist.currentAP >= balance.ATTACK_AP_COST
+      ) {
+        return "stage-attack";
+      }
+    }
+    return "hidden";
   }
 
   // ----- Input handling -----
@@ -463,6 +659,7 @@ export class RunScene extends Phaser.Scene {
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
     if (this.isOrientationLocked) return;
     if (this.isAnimating) return;
+    if (this.state.protagonist.currentHP <= 0) return;
     const px = { x: pointer.worldX, y: pointer.worldY };
     if (
       !isInMapArea(
@@ -493,13 +690,21 @@ export class RunScene extends Phaser.Scene {
       (e) => e.position.col === tile.col && e.position.row === tile.row,
     );
     if (enemy) {
+      // If the enemy is already staged for attack and we tap them again → commit.
+      if (
+        this.staged?.kind === "attack" &&
+        this.staged.targetId === enemy.id &&
+        this.state.activeTurn === "player"
+      ) {
+        this.commitStagedAttack();
+        return;
+      }
       this.setSelection({ kind: "enemy", id: enemy.id });
       this.clearStaged();
       return;
     }
 
-    // During enemy turn, taps still update selection (read-only) but
-    // can't stage moves.
+    // During enemy turn, taps still update selection (read-only).
     if (this.state.activeTurn === "enemy") {
       this.setSelection({ kind: "tile", pos: tile });
       this.clearStaged();
@@ -522,34 +727,59 @@ export class RunScene extends Phaser.Scene {
     }
 
     if (
-      this.staged !== null &&
-      this.staged.col === tile.col &&
-      this.staged.row === tile.row
+      this.staged?.kind === "move" &&
+      this.staged.pos.col === tile.col &&
+      this.staged.pos.row === tile.row
     ) {
-      this.commitStaged();
+      this.commitStagedMove();
     } else {
-      this.staged = tile;
+      this.staged = { kind: "move", pos: tile };
       this.setSelection({ kind: "tile", pos: tile });
-      this.events.emit("move-staged", { from: protagonist, to: tile, cost });
+      this.refreshStagedHalo();
+      this.refreshActionButton();
     }
   }
 
   private setSelection(sel: Selection): void {
     this.selection = sel;
-    this.events.emit("selection-changed", { selection: sel });
+    this.refreshPanel();
   }
 
   private clearStaged(): void {
     this.staged = null;
     this.refreshStagedHalo();
-    this.refreshConfirmVisibility();
+    this.refreshActionButton();
   }
 
-  private commitStaged(): void {
-    if (!this.staged) return;
+  /** Single click handler for the panel action button. */
+  private handleActionButton(): void {
+    if (this.isInputLocked) return;
+    switch (this.currentActionMode) {
+      case "confirm-move":
+        this.commitStagedMove();
+        break;
+      case "confirm-attack":
+        this.commitStagedAttack();
+        break;
+      case "stage-attack":
+        if (this.selection.kind === "enemy") {
+          this.staged = { kind: "attack", targetId: this.selection.id };
+          this.refreshStagedHalo();
+          this.refreshActionButton();
+        }
+        break;
+      case "hidden":
+        break;
+    }
+  }
+
+  // ----- Player move -----
+
+  private commitStagedMove(): void {
+    if (this.staged?.kind !== "move") return;
     if (this.state.activeTurn !== "player") return;
     if (this.isAnimating) return;
-    const target = this.staged;
+    const target = this.staged.pos;
     const result = commitMove(this.state, target);
     if (!result.ok) return;
     this.staged = null;
@@ -557,33 +787,18 @@ export class RunScene extends Phaser.Scene {
     this.startPlayerMoveAnimation(result.path, result.state);
   }
 
-  /**
-   * Animate the protagonist along the BFS path from `commitMove`.
-   *
-   * Walks one tile per `MOVE_STEP_DELAY_MS` (matching the enemy step
-   * cadence). Each step synthesizes an intermediate `RunState` with the
-   * sprite at `path[index]` and AP counted down by `index`, so the HUD
-   * counter ticks visibly. After the final step, the scene's state is
-   * set to `finalState` (matching exactly what `commitMove` produced)
-   * and `move-committed` fires for the post-animation refresh.
-   */
   private startPlayerMoveAnimation(
     path: TilePos[],
     finalState: RunState,
   ): void {
     if (path.length < 2) {
-      // No movement to animate (degenerate; commitMove shouldn't return this).
       this.state = finalState;
-      this.events.emit("move-committed", {
-        from: path[0],
-        to: path[0],
-        cost: 0,
-      });
+      this.afterPlayerMove();
       return;
     }
     this.isAnimating = true;
     this.targetingLayer.removeAll(true);
-    this.refreshConfirmVisibility();
+    this.refreshActionButton();
     this.advancePlayerStep(path, finalState, 1);
   }
 
@@ -595,11 +810,7 @@ export class RunScene extends Phaser.Scene {
     if (index >= path.length) {
       this.state = finalState;
       this.isAnimating = false;
-      this.events.emit("move-committed", {
-        from: path[0],
-        to: path[path.length - 1],
-        cost: path.length - 1,
-      });
+      this.afterPlayerMove();
       return;
     }
     const totalCost = path.length - 1;
@@ -617,6 +828,7 @@ export class RunScene extends Phaser.Scene {
       px.y + TILE_SIZE / 2,
     );
     this.refreshHUD();
+    this.refreshHpBars();
     this.refreshPanel();
     this.time.delayedCall(MOVE_STEP_DELAY_MS, () =>
       this.advancePlayerStep(path, finalState, index + 1),
@@ -624,17 +836,55 @@ export class RunScene extends Phaser.Scene {
   }
 
   private afterPlayerMove(): void {
-    // Sprite + HUD already updated by the animation; this hook does the
-    // post-animation cleanup (re-projects targeting, clears any stale halo).
     const px = tileToPixel(this.state.protagonist.position, this.gridCfg);
     this.protagonistSprite.setPosition(
       px.x + TILE_SIZE / 2,
       px.y + TILE_SIZE / 2,
     );
-    this.refreshTargeting();
-    this.refreshStagedHalo();
+    this.refreshAll();
+  }
+
+  // ----- Player attack -----
+
+  private commitStagedAttack(): void {
+    if (this.staged?.kind !== "attack") return;
+    if (this.state.activeTurn !== "player") return;
+    if (this.isAnimating) return;
+    const targetId = this.staged.targetId;
+    const result = commitAttack(this.state, {
+      attackerSide: "player",
+      weaponId: this.state.protagonist.weaponId,
+      targetId,
+    });
+    if (!result.ok) return;
+    this.state = result.state;
+    this.staged = null;
+    // If the target survived, keep them selected so the player can chain
+    // hits without re-tapping; if killed, reset to protagonist.
+    if (result.killed) {
+      this.setSelection({ kind: "protagonist" });
+    }
+    this.isAnimating = true;
+    const targetSprite = this.enemySprites.get(targetId);
+    if (targetSprite) {
+      this.flashSprite(targetSprite, COLOR.enemyMelee);
+    }
+    this.refreshHpBars();
+    this.refreshEnemySprites();
     this.refreshHUD();
     this.refreshPanel();
+    this.time.delayedCall(FLASH_MS, () => {
+      this.isAnimating = false;
+      this.refreshAll();
+    });
+  }
+
+  private flashSprite(sprite: Phaser.GameObjects.Arc, baseColor: number): void {
+    sprite.setFillStyle(COLOR.flash);
+    this.time.delayedCall(FLASH_MS, () => {
+      // Defensive: sprite may have been destroyed if the unit died.
+      if (sprite.active) sprite.setFillStyle(baseColor);
+    });
   }
 
   // ----- Turn cycle -----
@@ -642,23 +892,14 @@ export class RunScene extends Phaser.Scene {
   private endTurnAction(): void {
     if (this.isInputLocked) return;
     if (this.state.activeTurn !== "player") return;
-    // Player → enemy
     this.state = advanceTurn(this.state);
     this.staged = null;
     this.setSelection({ kind: "protagonist" });
-    this.events.emit("turn-changed", {
-      activeTurn: this.state.activeTurn,
-      turn: this.state.turn,
-    });
-    this.startEnemyTurnLoop();
-  }
-
-  private afterTurnChange(): void {
     this.refreshTurnIndicator();
     this.refreshEndTurnVisual();
     this.refreshTargeting();
-    this.refreshStagedHalo();
     this.refreshHUD();
+    this.startEnemyTurnLoop();
   }
 
   private startEnemyTurnLoop(): void {
@@ -666,46 +907,70 @@ export class RunScene extends Phaser.Scene {
   }
 
   private runEnemiesSequentially(enemyIndex: number): void {
+    if (this.state.protagonist.currentHP <= 0) {
+      this.handleProtagonistDeath();
+      return;
+    }
     if (enemyIndex >= this.state.enemies.length) {
       this.finishEnemyTurn();
       return;
     }
     const enemy = this.state.enemies[enemyIndex];
-    this.tryEnemyStep(enemy.id, enemyIndex);
+    this.tryEnemyAct(enemy.id, enemyIndex);
   }
 
-  private tryEnemyStep(enemyId: string, enemyIndex: number): void {
-    const before = this.state.enemies.find((e) => e.id === enemyId)?.position;
-    const result = enemyStep(this.state, enemyId);
-    if (!result.moved) {
+  private tryEnemyAct(enemyId: string, enemyIndex: number): void {
+    const result = enemyAct(this.state, enemyId);
+    if (result.kind === "idle") {
       this.runEnemiesSequentially(enemyIndex + 1);
       return;
     }
     this.state = result.state;
-    const after = this.state.enemies.find((e) => e.id === enemyId)?.position;
-    this.events.emit("enemy-moved", { enemyId, from: before, to: after });
-    this.time.delayedCall(MOVE_STEP_DELAY_MS, () =>
-      this.tryEnemyStep(enemyId, enemyIndex),
-    );
-  }
-
-  private afterEnemyStep(): void {
-    this.refreshEnemySprites();
-    // If the active selection is the moving enemy, refresh its panel.
-    if (this.selection.kind === "enemy") {
-      this.refreshPanel();
+    if (result.kind === "moved") {
+      this.refreshEnemySprites();
+      this.refreshHpBars();
+      if (this.selection.kind === "enemy") this.refreshPanel();
+      this.time.delayedCall(MOVE_STEP_DELAY_MS, () =>
+        this.tryEnemyAct(enemyId, enemyIndex),
+      );
+    } else {
+      // attacked
+      this.flashSprite(this.protagonistSprite, COLOR.protagonist);
+      this.refreshHpBars();
+      this.refreshHUD();
+      if (this.selection.kind === "protagonist") this.refreshPanel();
+      this.time.delayedCall(FLASH_MS, () => {
+        if (this.state.protagonist.currentHP <= 0) {
+          this.handleProtagonistDeath();
+          return;
+        }
+        this.tryEnemyAct(enemyId, enemyIndex);
+      });
     }
   }
 
   private finishEnemyTurn(): void {
-    // Enemy → player
+    if (this.state.protagonist.currentHP <= 0) {
+      this.handleProtagonistDeath();
+      return;
+    }
     this.state = advanceTurn(this.state);
-    this.events.emit("turn-changed", {
-      activeTurn: this.state.activeTurn,
-      turn: this.state.turn,
-    });
-    // Reset selection to the protagonist for a clean turn start.
     this.setSelection({ kind: "protagonist" });
+    this.refreshAll();
+  }
+
+  // ----- Death -----
+
+  private handleProtagonistDeath(): void {
+    const killer =
+      this.state.enemies[0]?.kind === "melee"
+        ? "Melee alien"
+        : (this.state.enemies[0]?.kind ?? "Unknown");
+    this.deathOverlayText.setText(
+      `You died · Turn ${this.state.turn} · Killed by: ${killer}`,
+    );
+    this.deathOverlay.setVisible(true);
+    this.refreshAll();
   }
 
   // ----- Orientation -----

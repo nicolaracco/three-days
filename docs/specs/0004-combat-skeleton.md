@@ -1,6 +1,6 @@
 # Spec 0004: Combat skeleton (melee, HP, damage, death)
 
-**Status:** Draft
+**Status:** Approved
 **Roadmap day:** GDD §13 Day 2 (combat completion half; combat feel polish lands in spec 0005)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture), ADR-0009 (testing discipline)
@@ -191,14 +191,7 @@ Per ADR-0008. No hover dependency.
 
 ## Open questions
 
-For the user to confirm before approval:
-
-- **"You died" overlay copy.** Recommend `"You died · Turn N · Killed by: Melee alien"`. Confirm.
-- **Hit flash color.** Recommend white (`#ffffff`) for 200 ms. Confirm or pick.
-- **Hurt tint color.** Recommend red (`#c05050`) for 200 ms. Confirm or pick.
-- **Combined vs split hit/hurt cues.** Recommend a single combined flash on damage taken (target → red-white → base) for spec 0004 simplicity; spec 0005 can split if play-test reveals confusion. Confirm or override.
-- **Attack-action structuring.** Recommend a sibling `enemyAct(state, enemyId)` that returns `{ kind: "moved" | "attacked" | "idle"; state }` and replaces direct `enemyStep` calls in the scene's enemy turn loop. Existing `enemyStep` stays as the move-only primitive; `enemyAct` chooses between attack and move per turn. Confirm or override.
-- **Naming "improvised-melee" weapon.** GDD §7.1 lists "improvised melee" as the weakest weapon. Confirm the id `improvised-melee` (kebab-case) for the data file.
+_(empty — all six questions resolved 2026-04-26, defaults accepted: "You died · Turn N · Killed by: Melee alien" overlay copy; white flash on damage taken (single combined cue, spec 0005 can split if needed); enemyAct sibling reducer chooses attack-or-move; weapon id "improvised-melee" kebab-case. Spec body carries the canonical values.)_
 
 ## Done means
 

@@ -1,0 +1,9 @@
+[
+  {
+    "id": "improvised-melee",
+    "name": "Improvised melee",
+    "damage": 1,
+    "range": 1,
+    "apCost": 2
+  }
+]

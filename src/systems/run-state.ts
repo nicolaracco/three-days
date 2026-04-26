@@ -19,6 +19,9 @@ export interface RunState {
     position: TilePos;
     currentAP: number;
     maxAP: number;
+    currentHP: number;
+    maxHP: number;
+    weaponId: string;
   };
   enemies: Enemy[];
   activeTurn: ActiveTurn;
@@ -47,6 +50,9 @@ export function createRunState(opts: { seed: number }): RunState {
       position: map.start,
       currentAP: balance.MAX_AP,
       maxAP: balance.MAX_AP,
+      currentHP: balance.PROTAGONIST_HP,
+      maxHP: balance.PROTAGONIST_HP,
+      weaponId: "improvised-melee",
     },
     enemies: loadDay1Enemies(),
     activeTurn: "player",

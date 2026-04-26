@@ -19,6 +19,12 @@ describe("createRunState", () => {
     expect(state.enemies[0].kind).toBe("melee");
   });
 
+  test("protagonist starts at full HP with the improvised-melee weapon equipped", () => {
+    expect(state.protagonist.currentHP).toBe(balance.PROTAGONIST_HP);
+    expect(state.protagonist.maxHP).toBe(balance.PROTAGONIST_HP);
+    expect(state.protagonist.weaponId).toBe("improvised-melee");
+  });
+
   test("two states with the same seed are structurally equal", () => {
     const a = createRunState({ seed: 7 });
     const b = createRunState({ seed: 7 });
