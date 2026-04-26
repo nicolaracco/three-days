@@ -1,6 +1,6 @@
 # Spec 0002: Click-to-move with AP on a static map
 
-**Status:** Approved
+**Status:** Done
 **Roadmap day:** GDD §13 Day 1 (interactive deliverable; substrate landed in spec 0001)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture), ADR-0009 (testing discipline)
