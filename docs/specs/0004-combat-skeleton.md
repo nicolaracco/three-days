@@ -1,6 +1,6 @@
 # Spec 0004: Combat skeleton (melee, HP, damage, death)
 
-**Status:** Approved
+**Status:** Done
 **Roadmap day:** GDD §13 Day 2 (combat completion half; combat feel polish lands in spec 0005)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture), ADR-0009 (testing discipline)
