@@ -107,9 +107,28 @@ Once per build day, **play the entire run end-to-end at least once** on the late
 
 ## File index
 
-Pointers go here as systems land, so future sessions orient without re-greping.
+Pointers to load-bearing files, so future sessions orient without re-greping.
 
-_(empty — fills in after Day 1 setup)_
+### Source
+
+- `src/main.ts` — Phaser game bootstrap; reads `data/viewport.json` for the working resolution; registers `BootScene` + `MenuScene`; sets `Phaser.Scale.FIT` + `CENTER_BOTH` per ADR-0008.
+- `src/scenes/` — Phaser scenes (the only place classes are required). `BootScene` transitions to `MenuScene`. New scenes: extend `Phaser.Scene`, add to the scene array in `main.ts`.
+- `src/systems/` — Game logic, Phaser-free where possible (ADR-0004). Tests live next to source: `foo.ts` ↔ `foo.test.ts`. Only file currently: `sanity.test.ts` (the bun-test harness check).
+- `src/data/viewport.json` — `WORKING_WIDTH` / `WORKING_HEIGHT` constants (per ADR-0008's portrait-resolution decision; ADR-0005 says coordinate-related constants live in JSON, not inline).
+- `src/procgen/` — chunk-based map generation. Empty placeholder; first content lands in spec 0003 / Day 3.
+- `src/ui/` — HUD, menus, inspection panel. Empty placeholder; first content lands when the inspection panel is needed (ADR-0008).
+
+### Toolchain
+
+- `package.json` — Bun-aware scripts (`bunx --bun vite` etc., per ADR-0001).
+- `tsconfig.json` — strict TypeScript; `resolveJsonModule: true` so `viewport.json` imports cleanly.
+- `vite.config.ts` — Vite browser config; `base: "./"` so the bundle works at any URL.
+- `eslint.config.js` — flat ESLint config (v9), TypeScript-aware, prettier-compatible.
+- `.prettierrc.json` / `.prettierignore` — defaults; `*.md` excluded so prose stays curated by hand.
+- `wrangler.jsonc` — Cloudflare Workers Builds config (ADR-0010); `assets.directory: ./dist`, `preview_urls: true`.
+- `.bun-version` — Bun version pin (currently `1.3.13`); read by Bun and mirrored to `BUN_VERSION` in the Workers Builds dashboard.
+- `index.html` — Vite entry; mobile viewport meta tag; `<title>Three Days</title>`.
+- `.claude/hooks/post-edit.sh` — typecheck on TS edits when bun + package.json + node_modules are all present (no-op during bootstrap).
 
 ## What "done" looks like
 
