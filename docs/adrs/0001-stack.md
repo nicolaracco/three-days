@@ -5,7 +5,7 @@
 
 ## Context
 
-Three Days is a 7-day, browser-only, single-player tactical roguelike with a hard quality bar (GDD §12) and a learning agenda. The stack must be familiar enough to ship in a week and minimal enough that build/tooling is not a tax on the build budget. Hosting target is itch.io static (Day 7); preview pipeline is Cloudflare Pages (ADR-0010).
+Three Days is a 7-day, browser-only, single-player tactical roguelike with a hard quality bar (GDD §12) and a learning agenda. The stack must be familiar enough to ship in a week and minimal enough that build/tooling is not a tax on the build budget. Hosting target is itch.io static (Day 7); preview pipeline is Cloudflare Workers Builds (ADR-0010).
 
 The toolchain is consolidated under **Bun** to keep the surface area small: one binary handles install, runtime, scripts, and tests. Vite stays for the browser-side dev server and bundle, since Bun's bundler is server-focused and Vite's HMR / asset handling for browser games is mature.
 
@@ -45,7 +45,7 @@ Conventional `package.json` scripts:
 - Positive: TS strict mode catches the tile/pixel mix-up class of bugs at compile time (see ADR-0005).
 - Positive: Phaser handles input, asset loading, and the scene graph — zero days spent on plumbing.
 - Positive: Vite dev server gives sub-second HMR; play-testing is fast.
-- Positive: One binary (Bun) replaces Node + pnpm + Vitest. Faster `install`, `run`, `test`. Fewer global tools to keep updated. No `.nvmrc` — Bun version is pinned via `.bun-version` and Cloudflare Pages's `BUN_VERSION` env var (ADR-0010).
+- Positive: One binary (Bun) replaces Node + pnpm + Vitest. Faster `install`, `run`, `test`. Fewer global tools to keep updated. No `.nvmrc` — Bun version is pinned via `.bun-version` and the Cloudflare Workers Builds `BUN_VERSION` env var (ADR-0010).
 - Positive: Bun runs TypeScript natively, so any one-off scripts (e.g. asset processing, a CLI tool to validate `data/*.json`) don't need a transpilation step.
 - Negative: Phaser's API surface is large and not always idiomatic TS — types are sometimes loose. Mitigated by ADR-0004 (game logic in `systems/`, Phaser only in `scenes/`).
 - Negative: `typescript` is still required as a devDep — Bun does not include `tsc`. The "no separate TS install" claim is partially true (Bun runs TS) and partially false (type-checking still needs `tsc`).
@@ -60,4 +60,4 @@ Conventional `package.json` scripts:
 - `package.json` `scripts.test` is `bun test` (not `vitest`).
 - `tsconfig.json` has `"strict": true`.
 - `bun run typecheck` runs `bunx tsc --noEmit` and is part of the per-task done checklist (CLAUDE.md).
-- A `.bun-version` file pins the Bun version used by Cloudflare Pages and any contributor running the project locally.
+- A `.bun-version` file pins the Bun version used by Cloudflare Workers Builds and any contributor running the project locally.

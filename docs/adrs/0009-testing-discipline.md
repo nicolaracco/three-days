@@ -85,6 +85,6 @@ Coverage targets are not a quality gate. A 100%-covered implementation that does
 - `package.json` does **not** list `vitest`, `jest`, or `@vitest/*` packages.
 - `package.json` `scripts.test` is `bun test`.
 - Test files match `*.test.ts` and import from `"bun:test"`, not from `"vitest"` or `"@jest/globals"`.
-- A failing `bun test` on a feature branch blocks the Cloudflare Pages preview deploy (per ADR-0010's build command).
+- A failing `bun test` on a feature branch blocks the Cloudflare Workers Builds deploy step (per ADR-0010's build command).
 - Each spec in `docs/specs/` has a `Test plan` block that splits unit-testable criteria from manual play-test criteria, and that explicitly lists iPhone-portrait scenarios for any UI-touching feature.
 - The implementer agent's report after each task lists the red, green, and verify steps with file:line evidence.

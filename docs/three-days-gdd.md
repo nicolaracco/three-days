@@ -4,7 +4,7 @@
 **Status:** Concept lock
 **Build budget:** 7 focused days, extendable to 10 if quality requires
 **Platform:** Web browser — desktop landscape **and** iPhone Safari portrait. See ADR-0008.
-**Distribution:** itch.io, free (ship target — Day 7). Cloudflare Pages preview pipeline during the build week. See ADR-0010.
+**Distribution:** itch.io, free (ship target — Day 7). Cloudflare Workers Builds preview pipeline during the build week. See ADR-0010.
 
 ---
 
@@ -276,7 +276,7 @@ Asset generation and integration is allocated across Day 6 (audio + UI) and Day 
 | Browser bundler / dev server | Vite, run via `bunx --bun vite` |
 | State | Plain TypeScript classes; no Redux, no signals |
 | Persistence | LocalStorage for run history only; no mid-run save |
-| Hosting (preview) | Cloudflare Pages — see ADR-0010 |
+| Hosting (preview) | Cloudflare Workers + Static Assets via Workers Builds — see ADR-0010 |
 | Hosting (ship) | itch.io static hosting (Day 7) |
 | Repo | GitHub, public from Day 1 |
 
@@ -298,9 +298,9 @@ Day 1 morning is for setup, not coding. Non-negotiable Day 1 deliverables:
 - Repo created and on GitHub (public)
 - CLAUDE.md committed
 - Dependencies installed
-- Hello-world deployed to Cloudflare Pages production URL and verified on iPhone Safari portrait (ADR-0010)
+- Hello-world deployed to Cloudflare's production URL (Workers Builds) and verified on iPhone Safari portrait (ADR-0010)
 
-itch.io is the **ship** target, not the preview target. The itch.io upload happens on Day 7 (see §13). Cloudflare Pages owns the iPhone test loop during the build week.
+itch.io is the **ship** target, not the preview target. The itch.io upload happens on Day 7 (see §13). Cloudflare Workers Builds owns the iPhone test loop during the build week.
 
 Game logic begins only after the dev environment is real.
 
@@ -363,7 +363,7 @@ Seven days, with explicit slack for quality work. Day-end criteria reference the
 
 | Day | Focus | End-of-day criterion |
 |---|---|---|
-| **Day 1** | Setup, dev environment, combat skeleton | Phaser project compiles. Hello-world is live on Cloudflare Pages and verified on iPhone Safari portrait (ADR-0010). Click-to-move with AP works on a static map. One enemy pathfinds. CLAUDE.md is in the repo. |
+| **Day 1** | Setup, dev environment, combat skeleton | Phaser project compiles. Hello-world is live on Cloudflare (Workers Builds) and verified on iPhone Safari portrait (ADR-0010). Click-to-move with AP works on a static map. One enemy pathfinds. CLAUDE.md is in the repo. |
 | **Day 2** | Combat completion AND combat feel | [Section 12.1](#121-combat-feel) is met for the existing combat. Hits, misses, damage-taken all read in under 250 ms. AP costs visible on hover. Enemy turns under 2 seconds. **If feel is not met, Day 3 is also combat feel.** |
 | **Day 3** | Procgen for Day 1 map | 8 apartment chunks authored. Stitcher produces valid maps with 2 reachable exits. Visual coherence at chunk seams is acceptable. Enemy and item placement works. |
 | **Day 4** | Day chain + Day 2 handcrafted maps | Both Day 2 maps (lobby, rooftop) authored. Day 1 → Day 2 transition works. Run-end screen shows the right summary. [Section 12.5](#125-onboarding) is met for the first three turns of Day 1. |

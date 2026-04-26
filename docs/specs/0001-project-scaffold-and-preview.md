@@ -1,4 +1,4 @@
-# Spec 0001: Project scaffold and Cloudflare Pages preview
+# Spec 0001: Project scaffold and Cloudflare preview pipeline
 
 **Status:** Approved
 **Roadmap day:** GDD §13 Day 1 (substrate only — click-to-move and enemy pathfinding become specs 0002 and 0003)
@@ -7,11 +7,11 @@
 
 ## Goal
 
-The repo gains a Bun + Vite + Phaser 3 + TypeScript scaffold, a `bun test` harness, and a Cloudflare Pages preview pipeline that auto-deploys on every push. A minimal "hello-world" Phaser scene loads at the production URL on desktop and iPhone Safari portrait. No game logic ships in this spec — only the substrate that every subsequent spec needs to land on.
+The repo gains a Bun + Vite + Phaser 3 + TypeScript scaffold, a `bun test` harness, and a Cloudflare Workers Builds preview pipeline that auto-deploys on every push. A minimal "hello-world" Phaser scene loads at the production URL on desktop and iPhone Safari portrait. No game logic ships in this spec — only the substrate that every subsequent spec needs to land on.
 
 ## Why this, why now
 
-GDD §13 Day 1's deliverables include "Phaser project compiles. Hello-world is live on Cloudflare Pages and verified on iPhone Safari portrait. CLAUDE.md is in the repo." (CLAUDE.md is already in.) ADR-0010 (preview pipeline) and ADR-0009 (testing discipline, red-green-verify) both depend on this substrate existing — the iPhone manual play-test is the verify step for every subsequent change, so the preview URL must be real before any other feature can be marked done. Spec 0001 lands the scaffold so specs 0002+ can use it.
+GDD §13 Day 1's deliverables include "Phaser project compiles. Hello-world is live on Cloudflare and verified on iPhone Safari portrait. CLAUDE.md is in the repo." (CLAUDE.md is already in.) ADR-0010 (preview pipeline) and ADR-0009 (testing discipline, red-green-verify) both depend on this substrate existing — the iPhone manual play-test is the verify step for every subsequent change, so the preview URL must be real before any other feature can be marked done. Spec 0001 lands the scaffold so specs 0002+ can use it.
 
 ## Scope
 
@@ -19,16 +19,16 @@ GDD §13 Day 1's deliverables include "Phaser project compiles. Hello-world is l
 
 - **Project scaffold (ADR-0001).** Bun (≥ 1.2) + Vite + Phaser 3 + TypeScript (`strict: true`). `package.json` with `dev`, `build`, `typecheck`, `lint`, `test`, `preview` scripts (see ADR-0001 for the canonical script content). `bun.lock` (text format) committed.
 - **TypeScript devDep.** `typescript` is installed as a devDep for `bunx tsc --noEmit`. Bun runs TS at runtime; type-checking still needs `tsc` per ADR-0001.
-- **Bun version pin.** `.bun-version` at repo root (default: latest stable Bun, e.g. `1.2.x` — implementer pins the exact version they used). The `BUN_VERSION` env var on Cloudflare Pages mirrors this file.
+- **Bun version pin.** `.bun-version` at repo root (implementer pins the exact version they used; currently `1.3.13`). The `BUN_VERSION` env var on the Cloudflare Workers Builds dashboard mirrors this file.
 - **Layered directory skeleton (ADR-0004).** `src/main.ts`, `src/scenes/`, `src/systems/`, `src/procgen/`, `src/data/`, `src/ui/`. Empty placeholder files (with a `.gitkeep` or a one-line README) where there's no real content yet are fine.
 - **Test harness (ADR-0009).** One trivial passing test in `src/systems/sanity.test.ts` that proves the loop: `import { test, expect } from "bun:test"; test("sanity", () => expect(1 + 1).toBe(2));`. No game-logic tests yet — those land with their features. No `vitest`, no `jest` packages.
 - **Hello-world Phaser scene.** A `BootScene` and a `MenuScene` (Phaser scenes; the only place classes are required per code style). `MenuScene` displays the text "Three Days — Hello World" centered on a solid background. No interactivity, no audio, no input handlers.
 - **Phaser Scale Manager (ADR-0008).** `mode: Phaser.Scale.FIT`, `autoCenter: Phaser.Scale.CENTER_BOTH`, working resolution `360 × 640`. The `360 × 640` value is recorded in `src/data/viewport.json` (or equivalent) as `WORKING_WIDTH` / `WORKING_HEIGHT` constants — not hardcoded in scenes.
 - **Mobile viewport meta tag.** `index.html` has `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">`. Page title is `Three Days`. No favicon yet (placeholder allowed).
 - **Pointer-events-only input config (ADR-0008).** No `mouse-*` or `touch-*` handlers anywhere. The scaffold doesn't *use* input yet, but if any sample listener is added, it goes through `pointerdown`/`pointerup`/`pointermove`. Verifiable by grep.
-- **Cloudflare Pages project (ADR-0010).** Pages project named `three-days` connected to the GitHub repo. Build command exactly: `bun install --frozen-lockfile && bun run typecheck && bun run lint && bun test && bun run build`. Output directory `dist/`. Framework preset `Vite`. `BUN_VERSION` env var set to match `.bun-version`.
+- **Cloudflare Workers + Static Assets (ADR-0010).** Worker named `three-days` connected to the GitHub repo via Workers Builds. A `wrangler.jsonc` at the repo root with `name: three-days`, `assets.directory: ./dist`, `preview_urls: true`, and a recent `compatibility_date`. Dashboard config: **Build command** `bun install --frozen-lockfile && bun run typecheck && bun run lint && bun test && bun run build`; **Deploy command** `bunx wrangler deploy`; env var `BUN_VERSION` matching `.bun-version`.
 - **Lint setup — minimum viable.** `eslint` + `@typescript-eslint` + `eslint-config-prettier` + `prettier` with defaults, run via `bunx eslint src && bunx prettier --check .`. `bun run lint` is the wired command. No bespoke rules in this spec; bespoke rules can land in their own follow-up.
-- **Per-branch and production preview verified.** `https://three-days.pages.dev` serves the hello-world. A pushed feature branch produces `https://<branch>.three-days.pages.dev` within ~60 seconds.
+- **Per-branch and production preview verified.** `https://three-days.<account>.workers.dev` serves the hello-world (where `<account>` is the developer's Cloudflare workers.dev subdomain). A pushed feature branch produces `https://<branch>-three-days.<account>.workers.dev` within ~60 seconds (per ADR-0010).
 
 ### Out of scope
 
@@ -46,7 +46,7 @@ GDD §13 Day 1's deliverables include "Phaser project compiles. Hello-world is l
 ## Inputs
 
 - Build inputs: `package.json`, `tsconfig.json`, `vite.config.ts`, `bunfig.toml` (only if needed), `.eslintrc.cjs` (or equivalent), `.prettierrc`, `.bun-version`.
-- Cloudflare Pages dashboard configuration (manual one-time setup by the user, post-spec).
+- Cloudflare Workers Builds dashboard configuration (manual one-time setup by the user, post-spec).
 - GitHub repo at `git@github.com:nicolaracco/three-days.git` (already exists; `main` is the production branch).
 - No runtime inputs — the hello-world scene reads no data.
 
@@ -56,8 +56,8 @@ GDD §13 Day 1's deliverables include "Phaser project compiles. Hello-world is l
 - A working `bun run build` producing a `dist/` artifact (`index.html` + bundled JS + assets).
 - A working `bun test` running Bun's built-in runner with one passing test.
 - A working `bun run typecheck` and `bun run lint`.
-- A Cloudflare Pages project that auto-deploys on every push.
-- Public URLs: production `https://three-days.pages.dev`, per-branch `https://<branch>.three-days.pages.dev`.
+- A Cloudflare Worker (`three-days`) deployed via Workers Builds on every push.
+- Public URLs: production `https://three-days.<account>.workers.dev`, per-branch `https://<branch>-three-days.<account>.workers.dev`.
 
 No game state, no events, no persistence.
 
@@ -90,10 +90,11 @@ That said, ADR-0008's substrate constraints apply even at zero interaction:
 - [ ] **[unit]** Working canvas resolution `360 × 640` is read from `src/data/viewport.json` (or equivalent), not hardcoded in the Phaser config.
 - [ ] **[unit]** A `bun.lock` (text) file is committed at the repo root. No `bun.lockb`, `pnpm-lock.yaml`, `package-lock.json`, or `yarn.lock`.
 - [ ] **[unit]** A `.bun-version` file is committed at the repo root, pinning the Bun version used for the build.
+- [ ] **[unit]** A `wrangler.jsonc` is committed at the repo root with `name: three-days`, `assets.directory: ./dist`, and `preview_urls: true` (per ADR-0010).
 - [ ] **[manual desktop]** `bun run dev` serves the hello-world scene on `localhost:5173`. The text "Three Days — Hello World" is centered. Browser console shows no errors.
-- [ ] **[manual desktop]** Pushing a feature branch produces a preview URL at `https://<branch>.three-days.pages.dev` within ~60 seconds. The URL serves the hello-world.
-- [ ] **[manual desktop]** Production URL `https://three-days.pages.dev` serves the hello-world after a push to `main`.
-- [ ] **[manual desktop]** Introducing a deliberate typecheck error on a feature branch causes the Cloudflare Pages build to fail; no preview URL is published for the broken commit. (This validates ADR-0010's gate.)
+- [ ] **[manual desktop]** Pushing a feature branch produces a preview URL at `https://<branch>-three-days.<account>.workers.dev` within ~60 seconds. The URL serves the hello-world.
+- [ ] **[manual desktop]** Production URL `https://three-days.<account>.workers.dev` serves the hello-world after a push to `main`.
+- [ ] **[manual desktop]** Introducing a deliberate typecheck error on a feature branch causes Workers Builds to fail at the Build step; the Deploy step never runs and no preview URL is published for the broken commit. (This validates ADR-0010's gate.)
 - [ ] **[manual iPhone]** Opening the production URL on iPhone Safari portrait shows the hello-world scene centered, no horizontal scroll, no zoom on tap, no Safari URL-bar cropping that disturbs the canvas.
 - [ ] **[manual iPhone]** Rotating the iPhone to landscape during the test does *not* break the page — the scene re-fits to the new aspect (orientation-lock overlay is out of scope, but the scaffold must not crash).
 
@@ -114,11 +115,11 @@ For every `[manual]` criterion above:
   - **Pass condition:** text reads "Three Days — Hello World", no console errors, no missing-asset warnings.
   - **Targets:** desktop browser only (the dev server isn't reachable from the iPhone unless on the same LAN — not required).
 
-- **Scenario "branch preview":** `git push origin a-throwaway-branch`, wait ≤ 60s, open `https://a-throwaway-branch.three-days.pages.dev`.
+- **Scenario "branch preview":** `git push origin a-throwaway-branch`, wait ≤ 60s, open `https://a-throwaway-branch-three-days.<account>.workers.dev`.
   - **Pass condition:** URL exists, serves the hello-world, no console errors.
   - **Targets:** desktop browser **and** iPhone Safari portrait (this is the iPhone test loop ADR-0010 promised).
 
-- **Scenario "production URL":** push to `main`, open `https://three-days.pages.dev`.
+- **Scenario "production URL":** push to `main`, open `https://three-days.<account>.workers.dev`.
   - **Pass condition:** as above.
   - **Targets:** desktop browser **and** iPhone Safari portrait.
 
@@ -136,9 +137,9 @@ For every `[manual]` criterion above:
 
 User's answers from the previous draft are folded in. Remaining items:
 
-- **Bun version pin.** Recommend the latest stable at the time of implementation (Bun 1.2.x as of this spec's draft date — confirm current latest before pinning). The `.bun-version` file must match the `BUN_VERSION` set on the Cloudflare Pages dashboard.
-- **Cloudflare Pages dashboard setup.** The user has stated they'll do this after spec approval. The implementer should pause and prompt for the dashboard click-through before attempting the iPhone-portrait acceptance criteria.
+- **Bun version pin.** Latest stable at implementation time (Bun 1.3.13 as committed). The `.bun-version` file must match the `BUN_VERSION` set on the Workers Builds dashboard.
+- **Cloudflare Workers Builds dashboard setup.** The user does the dashboard click-through after the implementer ships `wrangler.jsonc`. The implementer pauses and prompts before attempting the iPhone-portrait acceptance criteria.
 
 ## Done means
 
-The user opens `https://three-days.pages.dev` on their iPhone Safari in portrait orientation and sees a centered "Three Days — Hello World" Phaser scene render without console errors. They push a feature branch from their laptop; within ~60 seconds, `https://<branch>.three-days.pages.dev` exists and serves the same scene. A deliberately broken commit on a branch fails CI and produces no preview URL. `bun run dev`, `bun run typecheck`, `bun run lint`, `bun test`, and `bun run build` all succeed locally. The repo's `src/` skeleton — `scenes/`, `systems/`, `procgen/`, `data/`, `ui/` — is in place, ready for spec 0002 (click-to-move with AP) to land on.
+The user opens `https://three-days.<account>.workers.dev` on their iPhone Safari in portrait orientation and sees a centered "Three Days — Hello World" Phaser scene render without console errors. They push a feature branch from their laptop; within ~60 seconds, `https://<branch>-three-days.<account>.workers.dev` exists and serves the same scene. A deliberately broken commit on a branch fails CI and produces no preview URL. `bun run dev`, `bun run typecheck`, `bun run lint`, `bun test`, and `bun run build` all succeed locally. The repo's `src/` skeleton — `scenes/`, `systems/`, `procgen/`, `data/`, `ui/` — is in place, ready for spec 0002 (click-to-move with AP) to land on.

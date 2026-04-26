@@ -23,7 +23,7 @@ If those don't all apply, the rule probably belongs in `CLAUDE.md` or as a comme
 | 0007 | [Seeded RNG](0007-seeded-rng.md)                                       | Accepted |
 | 0008 | [UI architecture (platform, input, information design)](0008-ui-architecture.md) | Accepted |
 | 0009 | [Testing discipline](0009-testing-discipline.md)                       | Accepted |
-| 0010 | [Remote preview pipeline (Cloudflare Pages)](0010-preview-pipeline.md) | Accepted |
+| 0010 | [Remote preview pipeline (Cloudflare Workers + Static Assets)](0010-preview-pipeline.md) | Accepted |
 
 ## Authoring
 

@@ -24,4 +24,4 @@ Specs are numbered in the order they're authored, not in the order of the roadma
 
 | #    | Title                                                                              | Status | Roadmap day |
 |------|------------------------------------------------------------------------------------|--------|-------------|
-| 0001 | [Project scaffold and Cloudflare Pages preview](0001-project-scaffold-and-preview.md) | Approved | §13 Day 1   |
+| 0001 | [Project scaffold and Cloudflare preview pipeline](0001-project-scaffold-and-preview.md) | Approved | §13 Day 1   |

@@ -41,7 +41,7 @@ Do not invent architectural rules inside specs or code. If a feature would requi
 - **Seeded RNG everywhere, no `Math.random()` in game logic** — ADR-0007
 - **Playable on desktop landscape AND iPhone portrait; pointer events; no hover dependency — always-visible glyphs + sticky inspection panel + targeting projects all costs at once** — ADR-0008
 - **`bun test` + red-green-verify; manual play-test for §12 sub-bars on desktop and iPhone** — ADR-0009
-- **Cloudflare Pages preview per branch (`<branch>.three-days.pages.dev`); itch.io is the Day-7 ship target only** — ADR-0010
+- **Cloudflare Workers Builds preview per branch (`<branch>-three-days.<account>.workers.dev`, deployed via `wrangler deploy`); itch.io is the Day-7 ship target only** — ADR-0010
 
 Don't add dependencies casually. Each new dep is build-time and bug-surface tax. If "we could write this in 30 lines," write the 30 lines.
 

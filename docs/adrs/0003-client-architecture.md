@@ -5,7 +5,7 @@
 
 ## Context
 
-Three Days is single-player, free, hosted on itch.io as a static page (Day 7 ship target) and on Cloudflare Pages during the build week (preview target — see ADR-0010). The GDD explicitly lists what the project is *not*: no recruits, no LLM content pipeline, no telemetry, no meta-progression. itch.io's free tier and Cloudflare Pages both serve a static bundle; neither offers a backend the game can rely on.
+Three Days is single-player, free, hosted on itch.io as a static page (Day 7 ship target) and on Cloudflare Workers + Static Assets during the build week (preview target — see ADR-0010). The GDD explicitly lists what the project is *not*: no recruits, no LLM content pipeline, no telemetry, no meta-progression. itch.io's free tier and Cloudflare Workers + Static Assets both serve a static bundle; neither offers a backend the game can rely on.
 
 Within that constraint, two related decisions: (a) whether *anything* runs server-side, and (b) what persists across sessions on the client itself. Both decisions live in this ADR because the second is downstream of the first — once you've committed to "no backend," persistence is reduced to "what fits in the browser," and the question becomes "what should fit, and what should not."
 
@@ -39,7 +39,7 @@ LocalStorage is read and written from a single module (planned: `systems/run-his
 
 ## Consequences
 
-- Positive: Zero deploy infrastructure beyond static hosting. Cloudflare Pages and itch.io both serve the bundle as-is.
+- Positive: Zero deploy infrastructure beyond static hosting. Cloudflare Workers + Static Assets and itch.io both serve the bundle as-is.
 - Positive: No latency, no offline failure modes, no API key management.
 - Positive: Privacy-by-default — nothing leaves the player's machine.
 - Positive: A stranger can refresh the tab without losing their run history.
