@@ -1,0 +1,7 @@
+node_modules/
+dist/
+bun.lock
+
+# Markdown formatting is curated by hand; Prettier reflows prose
+# in ways that hurt line-by-line review. ESLint still covers code.
+*.md

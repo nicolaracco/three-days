@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# vite cache
+.vite/
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# editor
+.vscode/
+.idea/
+
+# claude local settings (per-machine)
+.claude/settings.local.json

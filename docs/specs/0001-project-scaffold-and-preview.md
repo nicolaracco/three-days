@@ -1,6 +1,6 @@
 # Spec 0001: Project scaffold and Cloudflare Pages preview
 
-**Status:** Draft
+**Status:** Approved
 **Roadmap day:** GDD §13 Day 1 (substrate only — click-to-move and enemy pathfinding become specs 0002 and 0003)
 **Owner:** Nicola
 **Related ADRs:** ADR-0001, ADR-0004, ADR-0008, ADR-0009, ADR-0010

@@ -11,9 +11,10 @@ file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev
 # Only fire on TS/TSX files
 [[ "$file_path" =~ \.(ts|tsx)$ ]] || exit 0
 
-# Need bun + package.json to do anything
+# Need bun + package.json + node_modules to do anything
 command -v bun >/dev/null 2>&1 || exit 0
 [[ -f package.json ]] || exit 0
+[[ -d node_modules ]] || exit 0
 
 # Typecheck — failure blocks and reports to Claude
 if ! bun run typecheck 2>&1; then
