@@ -1,0 +1,53 @@
+/**
+ * Map data — `Tile` tagged union, `Day1Map` shape, and the loader for the
+ * static Day-1 layout. Procedural generation arrives in spec 0003+.
+ */
+
+import type { TilePos } from "./grid";
+import day1MapJson from "../data/day1-static-map.json";
+
+export interface FloorTile {
+  kind: "floor";
+}
+
+export interface WallTile {
+  kind: "wall";
+}
+
+export type Tile = FloorTile | WallTile;
+
+export interface Day1Map {
+  width: number;
+  height: number;
+  start: TilePos;
+  /** Indexed [row][col] to match human-readable JSON authoring order. */
+  tiles: Tile[][];
+}
+
+/**
+ * Load the static Day-1 map from `data/day1-static-map.json`.
+ *
+ * The JSON stores tiles as kind strings (`"floor"`, `"wall"`); this loader
+ * lifts them into the `Tile` tagged-union shape that `systems/` expects.
+ */
+export function loadDay1Map(): Day1Map {
+  return {
+    width: day1MapJson.width,
+    height: day1MapJson.height,
+    start: day1MapJson.start,
+    tiles: day1MapJson.tiles.map((row) =>
+      row.map((kind) => {
+        switch (kind) {
+          case "floor":
+            return { kind: "floor" } satisfies FloorTile;
+          case "wall":
+            return { kind: "wall" } satisfies WallTile;
+          default:
+            throw new Error(
+              `Unknown tile kind in day1-static-map.json: ${kind}`,
+            );
+        }
+      }),
+    ),
+  };
+}

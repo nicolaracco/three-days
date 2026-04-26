@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { BootScene } from "./scenes/BootScene";
-import { MenuScene } from "./scenes/MenuScene";
+import { RunScene } from "./scenes/RunScene";
 import viewport from "./data/viewport.json";
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -13,7 +13,7 @@ const config: Phaser.Types.Core.GameConfig = {
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   backgroundColor: "#1a1a1a",
-  scene: [BootScene, MenuScene],
+  scene: [BootScene, RunScene],
 };
 
 new Phaser.Game(config);
