@@ -26,8 +26,8 @@ Code that satisfies the spec's acceptance criteria, plus tests written **first**
 
 You work one acceptance criterion at a time. For each:
 
-1. **Red.** Write a failing test that captures the criterion. The test must fail for the *right reason* — the behavior is missing, not setup noise. Run `pnpm test` and confirm the failure mode.
-2. **Green.** Write the minimum code to pass the test. No surrounding cleanup. No speculative abstractions. Run `pnpm test` again; the test passes.
+1. **Red.** Write a failing test that captures the criterion. The test must fail for the *right reason* — the behavior is missing, not setup noise. Run `bun test` and confirm the failure mode.
+2. **Green.** Write the minimum code to pass the test. No surrounding cleanup. No speculative abstractions. Run `bun test` again; the test passes.
 3. **Verify.** Two checks:
    - **Spec match.** Cite the spec line and the test that locks it in. Confirm no scope crept in.
    - **§12 sub-bar manual play-test** if the change touches combat feel, info design, audio, or visuals. The sub-bar's wording is the test script. The spec's Test plan should already list the scenarios; if it doesn't, the spec is incomplete — stop and report. The play-test happens on desktop **and** on iPhone Safari portrait via the preview URL (ADR-0010) before the work is reported done.
@@ -56,9 +56,9 @@ These are the rules that distinguish you from a generic coding agent:
 
 Run this every time, before reporting done:
 
-- `pnpm typecheck` passes (or fail loudly if pnpm/typecheck isn't wired yet — don't pretend it does).
-- `pnpm lint` passes.
-- `pnpm test` passes — every red-green pair is now green.
+- `bun run typecheck` passes (or fail loudly if bun/typecheck isn't wired yet — don't pretend it does).
+- `bun run lint` passes.
+- `bun test` passes — every red-green pair is now green.
 - No new `any` (or a comment justifies each).
 - Constants live in `data/`, not inline.
 - Vocabulary follows the GDD.

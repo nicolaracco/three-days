@@ -24,15 +24,15 @@ The real need: push a feature branch from the laptop → a public HTTPS URL exis
 ### Build configuration
 
 - **Framework preset:** Vite.
-- **Build command:** `pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+- **Build command:** `bun install --frozen-lockfile && bun run typecheck && bun run lint && bun test && bun run build`
 - **Output directory:** `dist/`
-- **Node version:** matches the project's `.nvmrc` (Day 1 setup item).
+- **Bun version:** pinned via the `BUN_VERSION` environment variable in the CF Pages dashboard, matching the project's `.bun-version` file (Day 1 setup item). No `.nvmrc` — there is no Node in the toolchain (ADR-0001).
 
 The build command **deliberately runs typecheck, lint, and tests before the build**. A failing typecheck, lint, or test fails the deploy — no broken preview. This is the gate ADR-0009 calls for; it lives here instead of in a separate CI system because it keeps the surface area to one tool.
 
 ### Workflow
 
-1. `pnpm dev` for fast local iteration.
+1. `bun run dev` for fast local iteration.
 2. `git push origin <branch>` → CF Pages builds → preview URL appears in the GitHub PR conversation (CF Pages bot comment) and on the CF Pages dashboard.
 3. Open the URL on iPhone Safari (paste, Continuity tab, or QR via the dashboard) → manual play-test the §12 sub-bars per the spec's Test plan.
 4. Merge to `main` → production URL updates automatically.
@@ -56,9 +56,9 @@ CF Pages stays as the preview target. The Day 7 ship target (GDD §13 Day 7) is 
 - Positive: Failing tests block the preview, so the iPhone manual play-test never fights a known-broken build.
 - Positive: Day 7 ship workflow is undisturbed. CF Pages and itch.io do separate jobs.
 - Negative: One external account to manage (Cloudflare). Free, but requires a sign-up and GitHub OAuth.
-- Negative: The build runs `pnpm install` from cold every time. CF Pages caches the pnpm store, but cold builds are ~60–90s; warm builds are ~20–30s. Acceptable.
-- Negative: `pnpm test` runs in CF Pages's CI environment, not locally; jsdom-dependent tests must work without devtools attached. ADR-0009's vitest setup must be CI-clean from Day 1.
-- Negative: A failing test on a branch produces a no-deploy state — the developer must read CF Pages logs to learn why. Mitigated by the consolidated build command running locally too (`pnpm typecheck && pnpm lint && pnpm test && pnpm build` is what CI runs; if it passes locally, the deploy passes).
+- Negative: The build runs `bun install` from cold every time. CF Pages caches `node_modules`, but cold builds are ~30–60s; warm builds are ~10–20s. Bun's install is materially faster than pnpm's, so this is rarely a bottleneck.
+- Negative: `bun test` runs in CF Pages's CI environment, not locally; any DOM-touching test must work without devtools attached. ADR-0009's `bun test` setup must be CI-clean from Day 1.
+- Negative: A failing test on a branch produces a no-deploy state — the developer must read CF Pages logs to learn why. Mitigated by the consolidated build command running locally too (`bun run typecheck && bun run lint && bun test && bun run build` is what CI runs; if it passes locally, the deploy passes).
 
 ## Verification
 
@@ -66,7 +66,7 @@ CF Pages stays as the preview target. The Day 7 ship target (GDD §13 Day 7) is 
 - The build command in CF Pages dashboard exactly matches the one in this ADR.
 - A push to a feature branch produces a preview URL within ~60s of the push.
 - The preview URL serves the latest `dist/` over HTTPS.
-- Forcing a `pnpm test` failure on a branch causes the deploy to fail; no preview URL is published for the broken commit.
+- Forcing a `bun test` failure on a branch causes the deploy to fail; no preview URL is published for the broken commit.
 - The implementer agent's task report includes the preview URL for any UI-touching change.
 
 ## Setup steps (Day 1)
@@ -75,7 +75,7 @@ These are the one-time setup items for the GDD §13 Day 1 deliverables:
 
 1. Create or sign in to a Cloudflare account.
 2. Create a Pages project named `three-days`. Connect it to the GitHub repo.
-3. Configure: framework preset Vite; build command `pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test && pnpm build`; output `dist/`.
+3. Configure: framework preset Vite; build command `bun install --frozen-lockfile && bun run typecheck && bun run lint && bun test && bun run build`; output `dist/`. Set `BUN_VERSION` env var to match the repo's `.bun-version`.
 4. Push a hello-world commit to `main`. Confirm `https://three-days.pages.dev` serves it.
 5. Push a throwaway branch. Confirm `https://<branch>.three-days.pages.dev` serves it.
 6. Open both URLs on iPhone Safari to confirm reachability.

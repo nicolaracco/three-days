@@ -22,4 +22,6 @@ Specs are numbered in the order they're authored, not in the order of the roadma
 
 ## Index
 
-_(empty — fills in as specs are authored)_
+| #    | Title                                                                              | Status | Roadmap day |
+|------|------------------------------------------------------------------------------------|--------|-------------|
+| 0001 | [Project scaffold and Cloudflare Pages preview](0001-project-scaffold-and-preview.md) | Draft  | §13 Day 1   |

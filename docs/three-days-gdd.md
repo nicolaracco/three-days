@@ -271,11 +271,13 @@ Asset generation and integration is allocated across Day 6 (audio + UI) and Day 
 | Layer | Choice |
 |---|---|
 | Language | TypeScript, strict mode |
+| Runtime / package manager / test runner | Bun (≥ 1.2). No Node, no pnpm. See ADR-0001. |
 | Engine | Phaser 3 |
-| Build | Vite |
+| Browser bundler / dev server | Vite, run via `bunx --bun vite` |
 | State | Plain TypeScript classes; no Redux, no signals |
 | Persistence | LocalStorage for run history only; no mid-run save |
-| Hosting | itch.io static hosting |
+| Hosting (preview) | Cloudflare Pages — see ADR-0010 |
+| Hosting (ship) | itch.io static hosting (Day 7) |
 | Repo | GitHub, public from Day 1 |
 
 ### 11.2 Code organization

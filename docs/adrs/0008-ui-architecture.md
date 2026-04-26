@@ -57,7 +57,7 @@ Mechanisms:
 - Negative: HUD layout has to fit a portrait aspect AND host a permanent inspection panel. The day/turn/objective/HP/AP block can't use a wide top bar; expect a stacked layout with the inspection panel bottom-anchored where thumbs reach.
 - Negative: Tile art has to carry more glyph load (HP bar, threat icon, exit type, gate icon, item icon, cover marker). ADR-0006's placeholder atlas needs to be scoped accordingly; Day 7's real-art swap inherits that glyph language.
 - Negative: Asset placement and tile size need to be chosen with portrait constraint in mind. Tile size on a 360-wide canvas constrains how many columns are visible; small tiles make glyphs harder to read. The trade-off lives in `data/balance.json` and the placeholder atlas spec.
-- Negative: Audio (GDD §12.4) on iOS Safari requires a user-initiated gesture before the AudioContext starts. The Boot scene needs a "tap to start" gate; `pnpm dev` on desktop hides this requirement, so the iPhone is the only place this is verified.
+- Negative: Audio (GDD §12.4) on iOS Safari requires a user-initiated gesture before the AudioContext starts. The Boot scene needs a "tap to start" gate; `bun run dev` on desktop hides this requirement, so the iPhone is the only place this is verified.
 
 ## Verification
 

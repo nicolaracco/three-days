@@ -37,7 +37,7 @@ Layer rules:
 
 ## Consequences
 
-- Positive: `systems/` can be tested with `vitest` and no DOM.
+- Positive: `systems/` can be tested with `bun test` and no DOM.
 - Positive: Swapping a Phaser version, or even Phaser itself, is bounded to `scenes/` + `ui/`.
 - Positive: Quality-reviewer (and `quality-reviewer` agent) has a clear set of grep targets for layer violations.
 - Negative: A small amount of ceremony when a system needs to surface state to UI (event dispatch instead of direct call).

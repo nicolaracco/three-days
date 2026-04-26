@@ -32,7 +32,7 @@ Do not invent architectural rules inside specs or code. If a feature would requi
 
 ## Stack (one line each — see ADRs for rationale)
 
-- **TypeScript strict + Phaser 3 + Vite + pnpm** — ADR-0001
+- **TypeScript strict + Bun + Phaser 3 + Vite (no Node, no pnpm; `typescript` devDep stays for `tsc --noEmit`)** — ADR-0001
 - **Plain TS classes for state, no framework** — ADR-0002
 - **Client-only architecture: no backend / LLM / telemetry; LocalStorage for run history only, no mid-run save** — ADR-0003
 - **Layered architecture: scenes / systems / data / procgen / ui** — ADR-0004
@@ -40,7 +40,7 @@ Do not invent architectural rules inside specs or code. If a feature would requi
 - **Single placeholder spritesheet, drop-in real art on Day 7** — ADR-0006
 - **Seeded RNG everywhere, no `Math.random()` in game logic** — ADR-0007
 - **Playable on desktop landscape AND iPhone portrait; pointer events; no hover dependency — always-visible glyphs + sticky inspection panel + targeting projects all costs at once** — ADR-0008
-- **Vitest + red-green-verify; manual play-test for §12 sub-bars on desktop and iPhone** — ADR-0009
+- **`bun test` + red-green-verify; manual play-test for §12 sub-bars on desktop and iPhone** — ADR-0009
 - **Cloudflare Pages preview per branch (`<branch>.three-days.pages.dev`); itch.io is the Day-7 ship target only** — ADR-0010
 
 Don't add dependencies casually. Each new dep is build-time and bug-surface tax. If "we could write this in 30 lines," write the 30 lines.
@@ -51,11 +51,11 @@ Phaser 3, Vite, and TypeScript APIs evolve. Before writing non-trivial code agai
 
 ## Commands
 
-- `pnpm dev` — local dev server
-- `pnpm build` — production build
-- `pnpm typecheck` — `tsc --noEmit`
-- `pnpm test` — run unit tests
-- `pnpm lint` — lint and format check
+- `bun run dev` — local dev server (Vite via `bunx --bun vite`)
+- `bun run build` — production build
+- `bun run typecheck` — `bunx tsc --noEmit`
+- `bun test` — run unit tests (Bun's built-in runner)
+- `bun run lint` — lint and format check
 
 These are wired during Day 1 setup; treat the list as the planned interface until then.
 
@@ -90,9 +90,9 @@ When choosing between approaches:
 
 For any change that touches game logic:
 
-- `pnpm typecheck` passes.
-- `pnpm lint` passes.
-- `pnpm test` passes — every red-green pair is now green (ADR-0009).
+- `bun run typecheck` passes.
+- `bun run lint` passes.
+- `bun test` passes — every red-green pair is now green (ADR-0009).
 - No `any` introduced (or commented if unavoidable).
 - Constants live in `data/`, not inline.
 - Vocabulary follows the GDD.
