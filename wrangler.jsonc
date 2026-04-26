@@ -3,7 +3,7 @@
   "name": "three-days",
   "compatibility_date": "2026-04-26",
   "assets": {
-    "directory": "./dist"
+    "directory": "./dist",
   },
-  "preview_urls": true
+  "preview_urls": true,
 }
