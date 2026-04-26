@@ -1,4 +1,4 @@
-# ADR-0005: Layered architecture
+# ADR-0004: Layered architecture
 
 **Status:** Accepted
 **Date:** 2026-04-26

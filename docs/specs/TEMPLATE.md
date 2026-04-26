@@ -29,7 +29,7 @@ What this feature reads from. Examples:
 
 - `data/balance.json` for AP costs
 - `RunState.seed` for RNG initialization
-- User input: pointer events on `RunScene` (unified mouse + touch — see ADR-0009)
+- User input: pointer events on `RunScene` (unified mouse + touch — see ADR-0008)
 
 ## Outputs / Effects
 
@@ -41,7 +41,7 @@ What state changes, what gets rendered, what events fire. Examples:
 
 ## Interaction (desktop + mobile, same model)
 
-Required for any UI-touching spec. Per ADR-0009, desktop and mobile share one model — selection-driven, no hover dependency. Specify:
+Required for any UI-touching spec. Per ADR-0008, desktop and mobile share one model — selection-driven, no hover dependency. Specify:
 
 - **Always-visible glyphs.** What the feature renders directly onto tiles or units (HP bar, threat icon, exit type, gate icon, item icon, cover marker, AP cost label, hit-chance label). Anything that *could* have been hover-revealed must be listed here or in the panel item below.
 - **Inspection panel.** What the panel shows when this feature is the current selection. Include the panel's content for every selectable thing the feature introduces.
@@ -63,7 +63,7 @@ If the spec touches a GDD §12 sub-bar, list which sub-bar(s) and the specific b
 
 ## Test plan
 
-Per ADR-0010, the test plan splits the criteria explicitly:
+Per ADR-0009, the test plan splits the criteria explicitly:
 
 ### Automated tests (red-green)
 
@@ -76,7 +76,7 @@ For every `[manual]` criterion, list the scenario:
 
 - **Scenario name:** what to do.
 - **Pass condition:** what the tester must observe (timing, SFX presence, on-screen text, hit area reachability with a thumb).
-- **Targets:** desktop browser **and** iPhone Safari portrait via the preview URL (ADR-0011), unless the criterion is platform-specific.
+- **Targets:** desktop browser **and** iPhone Safari portrait via the preview URL (ADR-0010), unless the criterion is platform-specific.
 
 If a sub-bar of §12 applies (12.1 combat feel, 12.2 information design, 12.3 visual coherence, 12.4 audio coverage, 12.5 onboarding), cite the exact bar line and how it's checked.
 

@@ -15,7 +15,7 @@ This project simultaneously serves a learning agenda and a commercial quality ba
 | What does the game do? Why?           | [`docs/three-days-gdd.md`](docs/three-days-gdd.md)                        |
 | What's the quality bar?               | GDD §12                                                                   |
 | What's the build plan / cut list?     | GDD §13                                                                   |
-| Why is the architecture this way?     | [`docs/adrs/`](docs/adrs/README.md) — ADR-0001 through ADR-0008           |
+| Why is the architecture this way?     | [`docs/adrs/`](docs/adrs/README.md) — ADR-0001 through ADR-0010           |
 | What's the contract for feature X?    | [`docs/specs/`](docs/specs/README.md) — one spec per shippable feature    |
 | Daily progress log                    | `DEVLOG.md` (created at first entry; see `/devlog` slash command)         |
 
@@ -34,15 +34,14 @@ Do not invent architectural rules inside specs or code. If a feature would requi
 
 - **TypeScript strict + Phaser 3 + Vite + pnpm** — ADR-0001
 - **Plain TS classes for state, no framework** — ADR-0002
-- **Client-only, no backend / LLM / telemetry** — ADR-0003
-- **LocalStorage for run history only, no mid-run save** — ADR-0004
-- **Layered architecture: scenes / systems / data / procgen / ui** — ADR-0005
-- **Tile vs pixel coordinates, conversion in `systems/grid.ts`** — ADR-0006
-- **Single placeholder spritesheet, drop-in real art on Day 7** — ADR-0007
-- **Seeded RNG everywhere, no `Math.random()` in game logic** — ADR-0008
-- **Playable on desktop landscape AND iPhone portrait; pointer events; no hover dependency — always-visible glyphs + sticky inspection panel + targeting projects all costs at once** — ADR-0009
-- **Vitest + red-green-verify; manual play-test for §12 sub-bars on desktop and iPhone** — ADR-0010
-- **Cloudflare Pages preview per branch (`<branch>.three-days.pages.dev`); itch.io is the Day-7 ship target only** — ADR-0011
+- **Client-only architecture: no backend / LLM / telemetry; LocalStorage for run history only, no mid-run save** — ADR-0003
+- **Layered architecture: scenes / systems / data / procgen / ui** — ADR-0004
+- **Tile vs pixel coordinates, conversion in `systems/grid.ts`** — ADR-0005
+- **Single placeholder spritesheet, drop-in real art on Day 7** — ADR-0006
+- **Seeded RNG everywhere, no `Math.random()` in game logic** — ADR-0007
+- **Playable on desktop landscape AND iPhone portrait; pointer events; no hover dependency — always-visible glyphs + sticky inspection panel + targeting projects all costs at once** — ADR-0008
+- **Vitest + red-green-verify; manual play-test for §12 sub-bars on desktop and iPhone** — ADR-0009
+- **Cloudflare Pages preview per branch (`<branch>.three-days.pages.dev`); itch.io is the Day-7 ship target only** — ADR-0010
 
 Don't add dependencies casually. Each new dep is build-time and bug-surface tax. If "we could write this in 30 lines," write the 30 lines.
 
@@ -75,7 +74,7 @@ These are wired during Day 1 setup; treat the list as the planned interface unti
 - No backend, no runtime LLM, no telemetry, no multiplayer scaffolding, no account systems.
 - No procedural narrative, no dialogue tree, no quest engine.
 - No tutorial pop-ups. Onboarding is implicit through level design (GDD §12.5).
-- No mid-run save (ADR-0004).
+- No mid-run save (ADR-0003).
 - No third enemy type, no fourth weapon, no half-cover, no procgen on Day 2 — without explicit human approval and a corresponding GDD edit.
 
 ## Decision rules
@@ -93,12 +92,18 @@ For any change that touches game logic:
 
 - `pnpm typecheck` passes.
 - `pnpm lint` passes.
-- `pnpm test` passes — every red-green pair is now green (ADR-0010).
+- `pnpm test` passes — every red-green pair is now green (ADR-0009).
 - No `any` introduced (or commented if unavoidable).
 - Constants live in `data/`, not inline.
 - Vocabulary follows the GDD.
-- If combat / info design / audio / visuals are touched: the relevant §12 sub-bar still holds, **verified manually on desktop and on iPhone Safari portrait** via the preview URL (ADR-0009 + ADR-0011).
+- If combat / info design / audio / visuals are touched: the relevant §12 sub-bar still holds, **verified manually on desktop and on iPhone Safari portrait** via the preview URL (ADR-0008 + ADR-0010).
 - The change can be described in one sentence. If not, split it.
+
+## Daily end-to-end playtest
+
+Per-change manual play-tests (under ADR-0009) cover the §12 sub-bars touched by that change. They do not catch **integration drift** — the slow accretion of cross-system breakage where each change passes its own check but the run as a whole degrades.
+
+Once per build day, **play the entire run end-to-end at least once** on the latest preview URL — desktop and iPhone portrait. Note any feel, legibility, or pacing surprises in the devlog (`/devlog`). This is process, not architecture; it lives here because it's the cheapest insurance against a Day-6 surprise.
 
 ## File index
 

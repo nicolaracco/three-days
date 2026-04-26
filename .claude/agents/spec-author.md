@@ -41,10 +41,10 @@ Required content (see template for structure):
 
 Every spec touches at least one architectural assumption. Reference the relevant ADRs in the spec's frontmatter `Related ADRs` field. Common cases:
 
-- New gameplay code → ADR-0005 (layered architecture), ADR-0008 (seeded RNG)
-- Anything with coordinates → ADR-0006
-- Anything that loads or renders sprites → ADR-0007
-- Anything that persists across runs → ADR-0004
+- New gameplay code → ADR-0004 (layered architecture), ADR-0007 (seeded RNG)
+- Anything with coordinates → ADR-0005
+- Anything that loads or renders sprites → ADR-0006
+- Anything that persists across runs → ADR-0003
 
 If the feature would require an architectural decision not covered by an existing ADR, **stop**. Tell the user a new ADR is needed before the spec is meaningful, and propose a one-line title for the missing ADR. Do not invent an architectural rule inside a spec.
 

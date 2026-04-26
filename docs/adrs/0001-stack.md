@@ -23,10 +23,10 @@ Three Days is a 7-day, browser-only, single-player tactical roguelike with a har
 
 ## Consequences
 
-- Positive: TS strict mode catches the tile/pixel mix-up class of bugs at compile time (see ADR-0006).
+- Positive: TS strict mode catches the tile/pixel mix-up class of bugs at compile time (see ADR-0005).
 - Positive: Phaser handles input, asset loading, and the scene graph — zero days spent on plumbing.
 - Positive: Vite dev server gives sub-second HMR; play-testing is fast.
-- Negative: Phaser's API surface is large and not always idiomatic TS — types are sometimes loose. Mitigated by ADR-0005 (game logic in `systems/`, Phaser only in `scenes/`).
+- Negative: Phaser's API surface is large and not always idiomatic TS — types are sometimes loose. Mitigated by ADR-0004 (game logic in `systems/`, Phaser only in `scenes/`).
 - Negative: A small audience of contributors will not have pnpm; documented in README.
 
 ## Verification

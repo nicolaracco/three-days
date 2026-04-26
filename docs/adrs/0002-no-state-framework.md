@@ -11,7 +11,7 @@ A tactical roguelike has rich runtime state (RunState, map, units, AP, RNG seed)
 
 State lives in plain TypeScript classes and tagged-union data. No Redux, no MobX, no signals library, no DI framework.
 
-UI changes are dispatched as Phaser events; `systems/` mutate state in response.
+UI changes are dispatched as Phaser events; `systems/` mutate state in response. The event bus is **Phaser's built-in `EventEmitter`** (`Phaser.Events.EventEmitter`, `scene.events`, `game.events`) — already part of the engine, no extra dependency, idiomatic for the framework. Do not add Mitt, RxJS, EventEmitter3, or any other event library; if Phaser's emitter is insufficient for a given case, that's a finding worth its own ADR.
 
 ## Alternatives considered
 
@@ -28,5 +28,6 @@ UI changes are dispatched as Phaser events; `systems/` mutate state in response.
 
 ## Verification
 
-- `package.json` does not list redux, zustand, mobx, signals libraries, or DI containers.
+- `package.json` does not list redux, zustand, mobx, signals libraries, DI containers, or third-party event libraries (mitt, eventemitter3, rxjs).
 - State types are defined in `systems/` as classes or tagged unions, not as framework primitives.
+- Cross-layer event flow uses Phaser's `EventEmitter` only. `rg "import.*EventEmitter" src/` shows imports from `phaser`, not from a third-party module.

@@ -1,4 +1,4 @@
-# ADR-0006: Tile/pixel coordinate split
+# ADR-0005: Tile/pixel coordinate split
 
 **Status:** Accepted
 **Date:** 2026-04-26
@@ -25,6 +25,12 @@ Tactical-grid games have two coordinate spaces: tile coordinates (col, row) for 
 - Positive: The most common bug class in the genre becomes a compile error.
 - Positive: Unit tests for `systems/grid.ts` are tiny but cover a load-bearing surface.
 - Negative: Slight verbosity at conversion sites. Acceptable.
+
+## Portrait constraint
+
+ADR-0008 commits to iPhone Safari portrait at a working resolution around 360 × 640 logical px, **and** to a glyph-rich tile rendering (HP bar, threat icon, exit type / gate / item / cover markers, AP and hit-chance labels in targeting mode). Tile size is therefore not a free parameter — it is bounded above by "fits in a 360-wide canvas with enough columns to make a tactical map" and below by "glyphs remain legible at a phone-reading distance."
+
+The chosen tile size lives in `data/balance.json` as a single constant (`TILE_SIZE`). It is the only place that constant is named; everything else flows through `systems/grid.ts`. When the tile size changes, no scene or system needs to know.
 
 ## Verification
 

@@ -1,11 +1,11 @@
-# ADR-0011: Remote preview pipeline (Cloudflare Pages)
+# ADR-0010: Remote preview pipeline (Cloudflare Pages)
 
 **Status:** Accepted
 **Date:** 2026-04-26
 
 ## Context
 
-ADR-0009 makes iPhone Safari portrait a real ship target, and ADR-0010 makes the iPhone manual play-test a non-skippable step in red-green-verify. Both depend on a public URL that the developer can open on the phone, on demand, for any branch under development. itch.io is the *ship* target (GDD §11.1) but not a good *preview* target — uploads via butler are slow, drafts are single-URL and overwritten on every push, and there is no per-PR isolation.
+ADR-0008 makes iPhone Safari portrait a real ship target, and ADR-0009 makes the iPhone manual play-test a non-skippable step in red-green-verify. Both depend on a public URL that the developer can open on the phone, on demand, for any branch under development. itch.io is the *ship* target (GDD §11.1) but not a good *preview* target — uploads via butler are slow, drafts are single-URL and overwritten on every push, and there is no per-PR isolation.
 
 The real need: push a feature branch from the laptop → a public HTTPS URL exists within ~60 seconds → open it on the phone → play.
 
@@ -28,7 +28,7 @@ The real need: push a feature branch from the laptop → a public HTTPS URL exis
 - **Output directory:** `dist/`
 - **Node version:** matches the project's `.nvmrc` (Day 1 setup item).
 
-The build command **deliberately runs typecheck, lint, and tests before the build**. A failing typecheck, lint, or test fails the deploy — no broken preview. This is the gate ADR-0010 calls for; it lives here instead of in a separate CI system because it keeps the surface area to one tool.
+The build command **deliberately runs typecheck, lint, and tests before the build**. A failing typecheck, lint, or test fails the deploy — no broken preview. This is the gate ADR-0009 calls for; it lives here instead of in a separate CI system because it keeps the surface area to one tool.
 
 ### Workflow
 
@@ -57,7 +57,7 @@ CF Pages stays as the preview target. The Day 7 ship target (GDD §13 Day 7) is 
 - Positive: Day 7 ship workflow is undisturbed. CF Pages and itch.io do separate jobs.
 - Negative: One external account to manage (Cloudflare). Free, but requires a sign-up and GitHub OAuth.
 - Negative: The build runs `pnpm install` from cold every time. CF Pages caches the pnpm store, but cold builds are ~60–90s; warm builds are ~20–30s. Acceptable.
-- Negative: `pnpm test` runs in CF Pages's CI environment, not locally; jsdom-dependent tests must work without devtools attached. ADR-0010's vitest setup must be CI-clean from Day 1.
+- Negative: `pnpm test` runs in CF Pages's CI environment, not locally; jsdom-dependent tests must work without devtools attached. ADR-0009's vitest setup must be CI-clean from Day 1.
 - Negative: A failing test on a branch produces a no-deploy state — the developer must read CF Pages logs to learn why. Mitigated by the consolidated build command running locally too (`pnpm typecheck && pnpm lint && pnpm test && pnpm build` is what CI runs; if it passes locally, the deploy passes).
 
 ## Verification
@@ -80,7 +80,7 @@ These are the one-time setup items for the GDD §13 Day 1 deliverables:
 5. Push a throwaway branch. Confirm `https://<branch>.three-days.pages.dev` serves it.
 6. Open both URLs on iPhone Safari to confirm reachability.
 
-Once these six steps work, the preview pipeline is "real" and ADR-0011 is honored.
+Once these six steps work, the preview pipeline is "real" and ADR-0010 is honored.
 
 ## Follow-ups
 

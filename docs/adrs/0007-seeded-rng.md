@@ -1,4 +1,4 @@
-# ADR-0008: Seeded RNG
+# ADR-0007: Seeded RNG
 
 **Status:** Accepted
 **Date:** 2026-04-26

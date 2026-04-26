@@ -3,8 +3,8 @@
 **Version:** 0.3 (Mobile + Pipeline Revision)
 **Status:** Concept lock
 **Build budget:** 7 focused days, extendable to 10 if quality requires
-**Platform:** Web browser — desktop landscape **and** iPhone Safari portrait. See ADR-0009.
-**Distribution:** itch.io, free (ship target — Day 7). Cloudflare Pages preview pipeline during the build week. See ADR-0011.
+**Platform:** Web browser — desktop landscape **and** iPhone Safari portrait. See ADR-0008.
+**Distribution:** itch.io, free (ship target — Day 7). Cloudflare Pages preview pipeline during the build week. See ADR-0010.
 
 ---
 
@@ -75,7 +75,7 @@ Every feature must serve at least one pillar. Features that serve none are out o
 |---|---|
 | Working title | Three Days (placeholder) |
 | Genre | Tactical roguelike vignette |
-| Platform | Web browser — desktop landscape and iPhone Safari portrait (ADR-0009) |
+| Platform | Web browser — desktop landscape and iPhone Safari portrait (ADR-0008) |
 | Distribution | itch.io |
 | Business model | Free |
 | Run length | 15–25 minutes |
@@ -296,7 +296,7 @@ Day 1 morning is for setup, not coding. Non-negotiable Day 1 deliverables:
 - Repo created and on GitHub (public)
 - CLAUDE.md committed
 - Dependencies installed
-- Hello-world deployed to Cloudflare Pages production URL and verified on iPhone Safari portrait (ADR-0011)
+- Hello-world deployed to Cloudflare Pages production URL and verified on iPhone Safari portrait (ADR-0010)
 
 itch.io is the **ship** target, not the preview target. The itch.io upload happens on Day 7 (see §13). Cloudflare Pages owns the iPhone test loop during the build week.
 
@@ -320,7 +320,7 @@ This section defines what "quality" concretely means. Every claim is testable. I
 
 The player always sees, **without searching**: current AP, max AP, current HP, max HP, equipped weapon and ammo, day number, turn number, current objective. None of these are hidden in submenus.
 
-**Every game-relevant fact is either always-visible on the map or always-visible in the inspection panel for the current selection.** No fact is gated on hover or transient interaction. The same model runs on desktop and iPhone portrait. See ADR-0009 for the mechanism. Concretely:
+**Every game-relevant fact is either always-visible on the map or always-visible in the inspection panel for the current selection.** No fact is gated on hover or transient interaction. The same model runs on desktop and iPhone portrait. See ADR-0008 for the mechanism. Concretely:
 
 - **Always-visible glyphs** render on the relevant tile or unit: enemy HP bar and threat-type icon; exit type icon, trait-gate icon, and one-line implication; item icon; cover marker.
 - **Sticky inspection panel** (bottom-anchored on portrait, side on landscape) always shows the current selection's full details. Default selection at the start of every turn is the protagonist. Tap or click a different target to move the selection.
@@ -361,7 +361,7 @@ Seven days, with explicit slack for quality work. Day-end criteria reference the
 
 | Day | Focus | End-of-day criterion |
 |---|---|---|
-| **Day 1** | Setup, dev environment, combat skeleton | Phaser project compiles. Hello-world is live on Cloudflare Pages and verified on iPhone Safari portrait (ADR-0011). Click-to-move with AP works on a static map. One enemy pathfinds. CLAUDE.md is in the repo. |
+| **Day 1** | Setup, dev environment, combat skeleton | Phaser project compiles. Hello-world is live on Cloudflare Pages and verified on iPhone Safari portrait (ADR-0010). Click-to-move with AP works on a static map. One enemy pathfinds. CLAUDE.md is in the repo. |
 | **Day 2** | Combat completion AND combat feel | [Section 12.1](#121-combat-feel) is met for the existing combat. Hits, misses, damage-taken all read in under 250 ms. AP costs visible on hover. Enemy turns under 2 seconds. **If feel is not met, Day 3 is also combat feel.** |
 | **Day 3** | Procgen for Day 1 map | 8 apartment chunks authored. Stitcher produces valid maps with 2 reachable exits. Visual coherence at chunk seams is acceptable. Enemy and item placement works. |
 | **Day 4** | Day chain + Day 2 handcrafted maps | Both Day 2 maps (lobby, rooftop) authored. Day 1 → Day 2 transition works. Run-end screen shows the right summary. [Section 12.5](#125-onboarding) is met for the first three turns of Day 1. |
