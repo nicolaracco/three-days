@@ -1,6 +1,6 @@
 # Spec 0006: Live procgen integration (2-chunk maps in `createRunState`)
 
-**Status:** Draft
+**Status:** Done
 **Roadmap day:** GDD §13 Day 3 (procgen, second half — multi-chunk + connectors + full library defer to spec 0007+)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture), ADR-0009 (testing discipline)
