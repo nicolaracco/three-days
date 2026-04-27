@@ -1,0 +1,14 @@
+{
+  "id": "entrance-room-b",
+  "kind": "entrance",
+  "width": 5,
+  "height": 5,
+  "start": { "col": 1, "row": 1 },
+  "tiles": [
+    ["wall", "wall", "wall", "wall", "wall"],
+    ["wall", "floor", "floor", "floor", "wall"],
+    ["wall", "floor", "wall", "floor", "wall"],
+    ["wall", "floor", "floor", "floor", "wall"],
+    ["wall", "wall", "door", "wall", "wall"]
+  ]
+}

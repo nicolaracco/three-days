@@ -1,6 +1,6 @@
 # Spec 0005: Procgen foundation — chunks, RNG, stitcher, validator
 
-**Status:** Draft
+**Status:** Approved
 **Roadmap day:** GDD §13 Day 3 (procgen, first half — library + live integration in spec 0006)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0009 (testing discipline)
@@ -164,13 +164,7 @@ No UI changes in this spec. The live game continues to load the static `data/day
 
 ## Open questions
 
-For the user to confirm before approval:
-
-- **PRNG choice.** Recommend [mulberry32](https://en.wikipedia.org/wiki/Mersenne_Twister) — small, deterministic, decent for game randomness. Alternative: sfc32 (slightly better statistical properties but more code). Confirm or override.
-- **Chunk size 5×5 fixed.** Recommend yes for spec 0005 (trivial stitcher geometry). Spec 0006 introduces variable sizes when the chunk library expands. Confirm.
-- **Number of chunks per map = 2.** Recommend yes — proof of concept. GDD §8.3 calls for 5–7 chunks; that's spec 0006. Confirm.
-- **`pickOne([])` behavior.** Recommend throw with a clear message (it's a programmer error, not a user-facing condition). Alternative: tagged-union `null` return. Recommend the simpler throw.
-- **Door tile representation.** Recommend `kind: "door"` in chunk JSON, lifted to `kind: "floor"` in stitched output. The `DoorTile` type stays in the `Tile` union for chunk authoring but is unused in `Day1Map.tiles`. Confirm.
+_(empty — all five questions resolved 2026-04-27, defaults accepted: mulberry32 PRNG; 5×5 chunks; 2 chunks per map; `pickOne([])` throws; door represented as `kind: "door"` in chunk JSON, becomes `floor` in stitched output. Spec body carries the canonical values.)_
 
 ## Done means
 
