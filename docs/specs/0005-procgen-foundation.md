@@ -1,6 +1,6 @@
 # Spec 0005: Procgen foundation — chunks, RNG, stitcher, validator
 
-**Status:** Approved
+**Status:** Done
 **Roadmap day:** GDD §13 Day 3 (procgen, first half — library + live integration in spec 0006)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0009 (testing discipline)
