@@ -7,10 +7,12 @@
  */
 
 import balance from "../data/balance.json";
-import { type Enemy, loadDay1Enemies } from "./enemy";
+import { type Enemy, loadDay1Enemies, placeEnemiesOnMap } from "./enemy";
 import type { TilePos } from "./grid";
-import { type Day1Map, loadDay1Map } from "./map";
+import type { Day1Map } from "./map";
 import { bfs } from "./pathfind";
+import { generateMap } from "./procgen";
+import { createRng } from "./rng";
 
 export type ActiveTurn = "player" | "enemy";
 
@@ -42,24 +44,45 @@ export type CommitMoveResult =
   | { ok: true; state: RunState; path: TilePos[] }
   | { ok: false; reason: "insufficient-ap" | "off-map" };
 
-/** Build a fresh `RunState` for a new run. Deterministic given the seed. */
-export function createRunState(opts: { seed: number }): RunState {
-  const map = loadDay1Map();
+/**
+ * Build a fresh `RunState` from an explicit `map` and `enemies`.
+ *
+ * Used by tests (which want shape-stable assertions against a fixture map)
+ * and by `createRunState` (which produces the runtime procgen map and
+ * delegates here for the rest of the state shape).
+ */
+export function createRunStateFromMap(opts: {
+  seed: number;
+  map: Day1Map;
+  enemies?: Enemy[];
+}): RunState {
   return {
     protagonist: {
-      position: map.start,
+      position: opts.map.start,
       currentAP: balance.MAX_AP,
       maxAP: balance.MAX_AP,
       currentHP: balance.PROTAGONIST_HP,
       maxHP: balance.PROTAGONIST_HP,
       weaponId: "improvised-melee",
     },
-    enemies: loadDay1Enemies(),
+    enemies: opts.enemies ?? loadDay1Enemies(),
     activeTurn: "player",
-    map,
+    map: opts.map,
     seed: opts.seed,
     turn: 1,
   };
+}
+
+/**
+ * Build a fresh `RunState` for a new run via procgen. Deterministic given
+ * the seed: same seed produces the same map and enemy positions. The
+ * runtime entry point — used by `RunScene.create`.
+ */
+export function createRunState(opts: { seed: number }): RunState {
+  const rng = createRng(opts.seed);
+  const map = generateMap(rng);
+  const enemies = placeEnemiesOnMap(loadDay1Enemies(), map, rng);
+  return createRunStateFromMap({ seed: opts.seed, map, enemies });
 }
 
 /**

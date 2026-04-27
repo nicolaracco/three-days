@@ -45,14 +45,11 @@ import {
 import { enemyAct } from "../systems/turn";
 
 const TILE_SIZE = viewport.TILE_SIZE;
-const MAP_WIDTH_TILES = 11;
-const MAP_AREA_X = Math.floor(
-  (viewport.WORKING_WIDTH - MAP_WIDTH_TILES * TILE_SIZE) / 2,
-);
-const MAP_AREA_Y = viewport.MAP_AREA_TOP;
+const MAP_AREA_TOP = viewport.MAP_AREA_TOP;
 const HUD_HEIGHT = viewport.HUD_HEIGHT;
 const PANEL_HEIGHT = viewport.PANEL_HEIGHT;
 const PANEL_Y = viewport.WORKING_HEIGHT - PANEL_HEIGHT;
+const MAP_AREA_HEIGHT = viewport.WORKING_HEIGHT - HUD_HEIGHT - PANEL_HEIGHT;
 
 /** Per-step delay for both player and enemy tile-by-tile movement (ms). */
 const MOVE_STEP_DELAY_MS = 200;
@@ -154,8 +151,16 @@ export class RunScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor(COLOR.sceneBg);
     this.state = createRunState({ seed: Date.now() });
+
+    // Center the (possibly smaller) procgen map within the map-area band.
+    // For an 11×15 map this collapses to the spec-0002 offsets exactly;
+    // for a 5×10 procgen map the empty space is split evenly on each side.
+    const mapPxW = this.state.map.width * TILE_SIZE;
+    const mapPxH = this.state.map.height * TILE_SIZE;
+    const offsetX = Math.floor((viewport.WORKING_WIDTH - mapPxW) / 2);
+    const offsetY = MAP_AREA_TOP + Math.floor((MAP_AREA_HEIGHT - mapPxH) / 2);
     this.gridCfg = {
-      offset: { x: MAP_AREA_X, y: MAP_AREA_Y },
+      offset: { x: offsetX, y: offsetY },
       tileSize: TILE_SIZE,
     };
 

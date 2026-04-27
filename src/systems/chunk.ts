@@ -13,8 +13,10 @@
 
 import entranceA from "../data/chunks/entrance-room-a.json";
 import entranceB from "../data/chunks/entrance-room-b.json";
+import entranceC from "../data/chunks/entrance-room-c.json";
 import backA from "../data/chunks/back-room-a.json";
 import backB from "../data/chunks/back-room-b.json";
+import backC from "../data/chunks/back-room-c.json";
 import type { TilePos } from "./grid";
 import type { FloorTile, WallTile } from "./map";
 
@@ -42,7 +44,7 @@ export interface Chunk {
   tiles: ChunkTile[][];
 }
 
-const RAW_CHUNKS = [entranceA, entranceB, backA, backB];
+const RAW_CHUNKS = [entranceA, entranceB, entranceC, backA, backB, backC];
 
 let cached: Chunk[] | null = null;
 

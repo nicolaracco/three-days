@@ -9,8 +9,8 @@ import {
 describe("loadChunks", () => {
   const chunks = loadChunks();
 
-  test("returns 4 chunks", () => {
-    expect(chunks).toHaveLength(4);
+  test("returns 6 chunks (3 entrance + 3 back)", () => {
+    expect(chunks).toHaveLength(6);
   });
 
   test("each chunk has matching width/height and tiles dimensions", () => {
@@ -62,9 +62,9 @@ describe("loadChunks", () => {
 });
 
 describe("getChunksOfKind", () => {
-  test("returns 2 entrance chunks and 2 back chunks", () => {
-    expect(getChunksOfKind("entrance")).toHaveLength(2);
-    expect(getChunksOfKind("back")).toHaveLength(2);
+  test("returns 3 entrance chunks and 3 back chunks", () => {
+    expect(getChunksOfKind("entrance")).toHaveLength(3);
+    expect(getChunksOfKind("back")).toHaveLength(3);
   });
 });
 

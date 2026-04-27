@@ -1,11 +1,25 @@
 import { test, expect, describe } from "bun:test";
 import balance from "../data/balance.json";
-import { advanceTurn, createRunState, type RunState } from "./run-state";
+import { loadDay1Enemies } from "./enemy";
+import { loadDay1Map } from "./map";
+import { advanceTurn, createRunStateFromMap, type RunState } from "./run-state";
 import { enemyAct, enemyStep, runEnemyTurn } from "./turn";
 
+/**
+ * Fixture state for tests that need shape-stable assertions.
+ * Uses the static 11×15 all-floor map and the static enemy at (5, 11).
+ */
+function fixtureState(): RunState {
+  return createRunStateFromMap({
+    seed: 1,
+    map: loadDay1Map(),
+    enemies: loadDay1Enemies(),
+  });
+}
+
 /** Helper: get to the start of an enemy turn with all enemies refilled. */
-function onEnemyTurn(seed = 1): RunState {
-  return advanceTurn(createRunState({ seed }));
+function onEnemyTurn(): RunState {
+  return advanceTurn(fixtureState());
 }
 
 /** Helper: place the protagonist `n` tiles north of the (single) enemy. */

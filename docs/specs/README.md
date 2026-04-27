@@ -29,3 +29,4 @@ Specs are numbered in the order they're authored, not in the order of the roadma
 | 0003 | [One enemy pathfinds](0003-one-enemy-pathfinds.md)                                      | Done     | §13 Day 1   |
 | 0004 | [Combat skeleton (melee, HP, damage, death)](0004-combat-skeleton.md)                   | Done     | §13 Day 2   |
 | 0005 | [Procgen foundation (chunks + RNG + stitcher + validator)](0005-procgen-foundation.md)  | Done     | §13 Day 3   |
+| 0006 | [Live procgen integration](0006-live-procgen-integration.md)                            | Approved | §13 Day 3   |
