@@ -9,6 +9,8 @@ import {
   commitMove,
   createRunState,
   createRunStateFromMap,
+  useFlashbang,
+  useMedkit,
 } from "./run-state";
 
 /**
@@ -198,5 +200,158 @@ describe("advanceTurn", () => {
     const beforeActiveTurn = state.activeTurn;
     advanceTurn(state);
     expect(state.activeTurn).toBe(beforeActiveTurn);
+  });
+});
+
+describe("useMedkit (spec 0010)", () => {
+  test("rejects with 'no-item' when inventory is empty", () => {
+    const state = fixtureState();
+    const result = useMedkit(state);
+    if (result.ok) throw new Error("expected rejection");
+    expect(result.reason).toBe("no-item");
+  });
+
+  test("rejects with 'insufficient-ap' when below USE_ITEM_AP_COST", () => {
+    const base = fixtureState();
+    const state = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        currentHP: 1,
+        currentAP: 0,
+        inventory: { medkit: 1, flashbang: 0 },
+      },
+    };
+    const result = useMedkit(state);
+    if (result.ok) throw new Error("expected rejection");
+    expect(result.reason).toBe("insufficient-ap");
+  });
+
+  test("rejects with 'at-full-hp' when already at max HP (open question 1)", () => {
+    const base = fixtureState();
+    const state = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        inventory: { medkit: 1, flashbang: 0 },
+      },
+    };
+    expect(state.protagonist.currentHP).toBe(state.protagonist.maxHP);
+    const result = useMedkit(state);
+    if (result.ok) throw new Error("expected rejection");
+    expect(result.reason).toBe("at-full-hp");
+  });
+
+  test("on success heals by ITEM_MEDKIT_HEAL, decrements inventory + AP", () => {
+    const base = fixtureState();
+    const state = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        currentHP: 1,
+        inventory: { medkit: 1, flashbang: 0 },
+      },
+    };
+    const result = useMedkit(state);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.state.protagonist.currentHP).toBe(
+      Math.min(state.protagonist.maxHP, 1 + balance.ITEM_MEDKIT_HEAL),
+    );
+    expect(result.state.protagonist.currentAP).toBe(
+      state.protagonist.currentAP - balance.USE_ITEM_AP_COST,
+    );
+    expect(result.state.protagonist.inventory.medkit).toBe(0);
+  });
+
+  test("heal is capped at maxHP", () => {
+    const base = fixtureState();
+    const state = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        currentHP: base.protagonist.maxHP - 1,
+        inventory: { medkit: 1, flashbang: 0 },
+      },
+    };
+    const result = useMedkit(state);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.state.protagonist.currentHP).toBe(state.protagonist.maxHP);
+  });
+});
+
+describe("useFlashbang (spec 0010)", () => {
+  test("rejects with 'no-item' when inventory is empty", () => {
+    const state = fixtureState();
+    const result = useFlashbang(state);
+    if (result.ok) throw new Error("expected rejection");
+    expect(result.reason).toBe("no-item");
+  });
+
+  test("rejects with 'insufficient-ap' when below USE_ITEM_AP_COST", () => {
+    const base = fixtureState();
+    const state = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        currentAP: 0,
+        inventory: { medkit: 0, flashbang: 1 },
+      },
+    };
+    const result = useFlashbang(state);
+    if (result.ok) throw new Error("expected rejection");
+    expect(result.reason).toBe("insufficient-ap");
+  });
+
+  test("stuns only enemies in 4-neighbor positions; non-adjacent unchanged", () => {
+    const base = fixtureState();
+    const state = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        position: { col: 5, row: 5 },
+        inventory: { medkit: 0, flashbang: 1 },
+      },
+      enemies: [
+        // Adjacent — stunned
+        { ...base.enemies[0], id: "adj", position: { col: 5, row: 6 } },
+        // Diagonal — NOT stunned (Manhattan 2)
+        { ...base.enemies[0], id: "diag", position: { col: 6, row: 6 } },
+        // Far — NOT stunned
+        { ...base.enemies[0], id: "far", position: { col: 0, row: 0 } },
+      ],
+    };
+    const result = useFlashbang(state);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.stunned).toBe(1);
+    const byId = (id: string) => result.state.enemies.find((e) => e.id === id)!;
+    expect(byId("adj").stunnedTurns).toBe(1);
+    expect(byId("diag").stunnedTurns).toBe(0);
+    expect(byId("far").stunnedTurns).toBe(0);
+    expect(result.state.protagonist.currentAP).toBe(
+      state.protagonist.currentAP - balance.USE_ITEM_AP_COST,
+    );
+    expect(result.state.protagonist.inventory.flashbang).toBe(0);
+  });
+
+  test("wasted bang (no enemies adjacent) still decrements inventory and AP", () => {
+    const base = fixtureState();
+    const state = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        position: { col: 5, row: 5 },
+        inventory: { medkit: 0, flashbang: 1 },
+      },
+      enemies: [
+        { ...base.enemies[0], id: "far", position: { col: 0, row: 0 } },
+      ],
+    };
+    const result = useFlashbang(state);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.stunned).toBe(0);
+    expect(result.state.protagonist.inventory.flashbang).toBe(0);
+    expect(result.state.protagonist.currentAP).toBe(
+      state.protagonist.currentAP - balance.USE_ITEM_AP_COST,
+    );
   });
 });

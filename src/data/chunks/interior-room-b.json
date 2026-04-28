@@ -5,6 +5,7 @@
   "height": 5,
   "start": null,
   "spawnSlots": [{ "col": 2, "row": 2 }],
+  "itemSlots": [{ "col": 1, "row": 3, "kind": "flashbang" }],
   "connectors": [
     { "side": "n", "col": 2, "row": 0 },
     { "side": "e", "col": 4, "row": 2 }

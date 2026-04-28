@@ -141,6 +141,7 @@ describe("isFullyConnected", () => {
       start: { col: 0, row: 0 },
       tiles: [[{ kind: "floor" }]],
       spawnSlots: [],
+      itemsOnMap: [],
     };
     expect(isFullyConnected(map, map.start)).toBe(true);
   });
@@ -157,6 +158,7 @@ describe("isFullyConnected", () => {
       start: { col: 0, row: 0 },
       tiles,
       spawnSlots: [],
+      itemsOnMap: [],
     };
     expect(isFullyConnected(map, map.start)).toBe(false);
   });
@@ -172,6 +174,7 @@ describe("isFullyConnected", () => {
       start: { col: 0, row: 0 },
       tiles,
       spawnSlots: [],
+      itemsOnMap: [],
     };
     expect(isFullyConnected(map, map.start)).toBe(true);
   });
@@ -269,5 +272,53 @@ describe("generateMap exits (spec 0009)", () => {
       }
     }
     expect(seen.size).toBeGreaterThan(2);
+  });
+});
+
+describe("generateMap items (spec 0010)", () => {
+  test("itemsOnMap is populated with at least one item across realistic seeds", () => {
+    // Author has placed item slots in 4 of 5 interior chunks; entrance
+    // chunks have none. Worst-case 3-chunk maps include >= 1 interior,
+    // so every map should carry at least one item.
+    let totalAcrossSeeds = 0;
+    for (let s = 1; s <= 30; s++) {
+      const map = generateMap(createRng(s));
+      expect(map.itemsOnMap.length).toBeGreaterThanOrEqual(1);
+      totalAcrossSeeds += map.itemsOnMap.length;
+    }
+    // Sanity: across 30 maps we shouldn't be ~30 (the floor) — chunks
+    // with item slots get used often enough to exceed the floor by a
+    // healthy margin.
+    expect(totalAcrossSeeds).toBeGreaterThan(30);
+  });
+
+  test("every item lands on a floor tile (not wall, not exit, in-bounds)", () => {
+    for (let s = 1; s <= 30; s++) {
+      const map = generateMap(createRng(s));
+      for (const item of map.itemsOnMap) {
+        expect(item.position.col).toBeGreaterThanOrEqual(0);
+        expect(item.position.col).toBeLessThan(map.width);
+        expect(item.position.row).toBeGreaterThanOrEqual(0);
+        expect(item.position.row).toBeLessThan(map.height);
+        expect(map.tiles[item.position.row][item.position.col].kind).toBe(
+          "floor",
+        );
+      }
+    }
+  });
+
+  test("same seed produces the same itemsOnMap (positions and kinds)", () => {
+    const a = generateMap(createRng(2024));
+    const b = generateMap(createRng(2024));
+    expect(a.itemsOnMap).toEqual(b.itemsOnMap);
+  });
+
+  test("authored item kinds appear across seeds (both medkit and flashbang surface)", () => {
+    const kinds = new Set<string>();
+    for (let s = 1; s <= 30; s++) {
+      const map = generateMap(createRng(s));
+      for (const item of map.itemsOnMap) kinds.add(item.kind);
+    }
+    expect(kinds).toEqual(new Set(["medkit", "flashbang"]));
   });
 });

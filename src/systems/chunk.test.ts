@@ -116,10 +116,46 @@ describe("Chunk type", () => {
       height: 1,
       start: { col: 0, row: 0 },
       spawnSlots: [],
+      itemSlots: [],
       connectors: [conn],
       tiles: [[{ kind: "door" }]],
     };
     expect(c.id).toBe("test");
     expect(c.connectors[0].side).toBe("s");
+  });
+});
+
+describe("loadChunks itemSlots (spec 0010)", () => {
+  const chunks = loadChunks();
+
+  test("every chunk has an itemSlots field (empty array allowed)", () => {
+    for (const c of chunks) {
+      expect(Array.isArray(c.itemSlots)).toBe(true);
+    }
+  });
+
+  test("authored itemSlots use only known kinds (medkit | flashbang)", () => {
+    for (const c of chunks) {
+      for (const slot of c.itemSlots) {
+        expect(["medkit", "flashbang"]).toContain(slot.kind);
+      }
+    }
+  });
+
+  test("at least one chunk has each kind authored across the library", () => {
+    const kinds = new Set<string>();
+    for (const c of chunks) {
+      for (const s of c.itemSlots) kinds.add(s.kind);
+    }
+    expect(kinds).toEqual(new Set(["medkit", "flashbang"]));
+  });
+
+  test("authored item slots sit on floor tiles (no walls, no doors)", () => {
+    for (const c of chunks) {
+      for (const slot of c.itemSlots) {
+        const tile = c.tiles[slot.row][slot.col];
+        expect(tile.kind).toBe("floor");
+      }
+    }
   });
 });

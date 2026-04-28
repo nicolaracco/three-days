@@ -27,6 +27,7 @@ import Phaser from "phaser";
 import { BUILD_SHA } from "../build-info";
 import balance from "../data/balance.json";
 import viewport from "../data/viewport.json";
+import type { Enemy } from "../systems/enemy";
 import { commitAttack } from "../systems/combat";
 import {
   type GridConfig,
@@ -35,6 +36,7 @@ import {
   pixelToTile,
   tileToPixel,
 } from "../systems/grid";
+import { type ItemKind, pickupItemAt } from "../systems/item";
 import type { ExitTile } from "../systems/map";
 import { apCostToReach, reachableTiles } from "../systems/movement";
 import {
@@ -43,6 +45,8 @@ import {
   commitMove,
   createRunState,
   enemyTiles,
+  useFlashbang,
+  useMedkit,
 } from "../systems/run-state";
 import { enemyAct } from "../systems/turn";
 
@@ -57,6 +61,8 @@ const MAP_AREA_HEIGHT = viewport.WORKING_HEIGHT - HUD_HEIGHT - PANEL_HEIGHT;
 const MOVE_STEP_DELAY_MS = 200;
 /** Duration of the white hit/hurt flash on a damaged unit (ms). */
 const FLASH_MS = 200;
+/** Duration the wasted-bang panel hint stays visible before refresh (ms). */
+const TRANSIENT_HINT_MS = 1500;
 
 const COLOR = {
   sceneBg: "#0a0a0a",
@@ -87,6 +93,13 @@ const COLOR = {
   exitStairwell: 0xffd166,
   exitFireEscape: 0x4ec1f7,
   exitGateMarker: 0xffd166,
+  // Spec 0010: item glyphs and the stunned-enemy tint. Reuse hpBarFg
+  // green for medkits and stagedHaloStroke yellow for flashbangs.
+  // `enemyStunned` is the muted-grey variant of `enemyMelee` — reads
+  // "out of action" without introducing a third unit color.
+  itemMedkit: 0x6abf6a,
+  itemFlashbang: 0xffd166,
+  enemyStunned: 0x707070,
 } as const;
 
 const EXIT_CAPTION: Record<ExitTile["exitType"], string> = {
@@ -119,9 +132,24 @@ type Selection =
 
 type Staged =
   | { kind: "move"; pos: TilePos }
-  | { kind: "attack"; targetId: string };
+  | { kind: "attack"; targetId: string }
+  | { kind: "use-item"; itemKind: ItemKind };
 
-type ActionMode = "confirm-move" | "confirm-attack" | "stage-attack" | "hidden";
+type ActionMode =
+  | "confirm-move"
+  | "confirm-attack"
+  | "stage-attack"
+  | "stage-medkit"
+  | "stage-flashbang"
+  | "confirm-medkit"
+  | "confirm-flashbang"
+  | "hidden";
+
+interface ActionSlot {
+  mode: ActionMode;
+  label: string;
+  fill: number;
+}
 
 interface HpBar {
   bg: Phaser.GameObjects.Rectangle;
@@ -143,6 +171,7 @@ export class RunScene extends Phaser.Scene {
 
   private targetingLayer!: Phaser.GameObjects.Container;
   private stagedLayer!: Phaser.GameObjects.Container;
+  private itemsLayer!: Phaser.GameObjects.Container;
   private protagonistSprite!: Phaser.GameObjects.Arc;
   private protagonistHpBar!: HpBar;
   private enemySprites: Map<string, Phaser.GameObjects.Arc> = new Map();
@@ -160,7 +189,19 @@ export class RunScene extends Phaser.Scene {
   private panelLine2!: Phaser.GameObjects.Text;
   private actionRect!: Phaser.GameObjects.Rectangle;
   private actionLabel!: Phaser.GameObjects.Text;
+  private actionRect2!: Phaser.GameObjects.Rectangle;
+  private actionLabel2!: Phaser.GameObjects.Text;
+  /** First action-area slot's mode. `hidden` collapses the slot. */
   private currentActionMode: ActionMode = "hidden";
+  /** Second action-area slot's mode (only set when two item buttons fit). */
+  private currentActionMode2: ActionMode = "hidden";
+  /**
+   * Spec 0010: when set to a non-zero scene-time value, `refreshPanel`
+   * renders the transient hint string instead of the selection-derived
+   * content. Cleared by a `delayedCall` after `TRANSIENT_HINT_MS`.
+   */
+  private transientPanelHintUntil = 0;
+  private transientPanelHint = "";
 
   private orientationOverlay!: Phaser.GameObjects.Container;
   private deathOverlay!: Phaser.GameObjects.Container;
@@ -211,6 +252,7 @@ export class RunScene extends Phaser.Scene {
     this.renderMap();
     this.targetingLayer = this.add.container(0, 0);
     this.stagedLayer = this.add.container(0, 0);
+    this.itemsLayer = this.add.container(0, 0);
     this.renderEnemies();
     this.renderProtagonist();
     this.renderHUD();
@@ -424,11 +466,11 @@ export class RunScene extends Phaser.Scene {
       })
       .setScrollFactor(0);
 
-    // Single action button slot. Text and color change with mode:
-    //   "Confirm Move" — when a move is staged
-    //   "Confirm Attack" — when an attack is staged
-    //   "Attack (2 AP)" — when an adjacent enemy is selected and AP allows
-    //   hidden — otherwise
+    // Two action-area button slots. The primary slot (`actionRect`) is the
+    // existing single 132×36 button; the secondary slot (`actionRect2`)
+    // appears beside it only when two item buttons need to fit. Layout
+    // and visibility are recomputed on every refresh — see
+    // `refreshActionButton`.
     const btnW = 132;
     const btnH = 36;
     const btnX = viewport.WORKING_WIDTH - btnW - 12;
@@ -442,11 +484,31 @@ export class RunScene extends Phaser.Scene {
         Phaser.Geom.Rectangle.Contains,
       )
       .setVisible(false);
-    this.actionRect.on("pointerdown", () => this.handleActionButton());
+    this.actionRect.on("pointerdown", () => this.handleActionButton(1));
     this.actionLabel = this.add
       .text(btnX + btnW / 2, btnY + btnH / 2, "", {
         fontFamily: "monospace",
         fontSize: "16px",
+        color: COLOR.text,
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setVisible(false);
+    this.actionRect2 = this.add
+      .rectangle(0, btnY, 62, btnH, COLOR.buttonBg)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setInteractive(
+        // Padded hit area — visual is 62×36, hit is 62×44 (≥ ADR-0008 min).
+        new Phaser.Geom.Rectangle(0, -4, 62, 44),
+        Phaser.Geom.Rectangle.Contains,
+      )
+      .setVisible(false);
+    this.actionRect2.on("pointerdown", () => this.handleActionButton(2));
+    this.actionLabel2 = this.add
+      .text(0, btnY + btnH / 2, "", {
+        fontFamily: "monospace",
+        fontSize: "13px",
         color: COLOR.text,
       })
       .setOrigin(0.5, 0.5)
@@ -550,7 +612,30 @@ export class RunScene extends Phaser.Scene {
     this.refreshHUD();
     this.refreshTurnIndicator();
     this.refreshEndTurnVisual();
+    this.refreshItems();
+    this.refreshEnemySprites();
     this.refreshPanel();
+  }
+
+  /**
+   * Spec 0010: re-render every item in `state.itemsOnMap`. Cheap to
+   * tear down and rebuild — items are picked up rarely (a few per run)
+   * and the layer's child count is at most ~5.
+   */
+  private refreshItems(): void {
+    this.itemsLayer.removeAll(true);
+    for (const item of this.state.itemsOnMap) {
+      const px = tileToPixel(item.position, this.gridCfg);
+      const cx = px.x + TILE_SIZE / 2;
+      const cy = px.y + TILE_SIZE / 2;
+      const glyph =
+        item.kind === "medkit"
+          ? this.add
+              .rectangle(cx, cy, 12, 12, COLOR.itemMedkit)
+              .setOrigin(0.5, 0.5)
+          : this.add.circle(cx, cy, 6, COLOR.itemFlashbang);
+      this.itemsLayer.add(glyph);
+    }
   }
 
   private refreshTargeting(): void {
@@ -596,11 +681,15 @@ export class RunScene extends Phaser.Scene {
   }
 
   private getStagedTile(): TilePos | null {
-    if (!this.staged) return null;
-    if (this.staged.kind === "move") return this.staged.pos;
-    const targetId = this.staged.targetId;
-    const e = this.state.enemies.find((x) => x.id === targetId);
-    return e?.position ?? null;
+    const staged = this.staged;
+    if (!staged) return null;
+    if (staged.kind === "move") return staged.pos;
+    if (staged.kind === "attack") {
+      const e = this.state.enemies.find((x) => x.id === staged.targetId);
+      return e?.position ?? null;
+    }
+    // "use-item" — self-targeted, no halo tile.
+    return null;
   }
 
   private refreshHUD(): void {
@@ -646,12 +735,13 @@ export class RunScene extends Phaser.Scene {
         this.enemyHpBars.delete(id);
       }
     }
-    // Update positions of surviving enemies.
+    // Update positions and stun tint of surviving enemies.
     for (const enemy of this.state.enemies) {
       const sprite = this.enemySprites.get(enemy.id);
       if (!sprite) continue;
       const px = tileToPixel(enemy.position, this.gridCfg);
       sprite.setPosition(px.x + TILE_SIZE / 2, px.y + TILE_SIZE / 2);
+      sprite.setFillStyle(this.enemyFillColor(enemy));
       const bar = this.enemyHpBars.get(enemy.id);
       if (bar) {
         const barX = px.x + (TILE_SIZE - HP_BAR_WIDTH) / 2;
@@ -660,6 +750,15 @@ export class RunScene extends Phaser.Scene {
         bar.fg.setPosition(barX, barY);
       }
     }
+  }
+
+  /**
+   * Spec 0010: stunned enemies render in a muted grey to read "out of
+   * action" without introducing a third unit color. Used by both
+   * `refreshEnemySprites` and post-flash restoration.
+   */
+  private enemyFillColor(enemy: Enemy): number {
+    return enemy.stunnedTurns > 0 ? COLOR.enemyStunned : COLOR.enemyMelee;
   }
 
   private refreshHpBars(): void {
@@ -687,13 +786,28 @@ export class RunScene extends Phaser.Scene {
   }
 
   private refreshPanel(): void {
+    // Spec 0010: a live transient hint (from a wasted-bang feedback)
+    // overrides the selection-derived content for its duration.
+    if (
+      this.transientPanelHintUntil > 0 &&
+      this.time.now < this.transientPanelHintUntil
+    ) {
+      this.panelTitle.setText("");
+      this.panelLine1.setText(this.transientPanelHint);
+      this.panelLine2.setText("");
+      this.refreshActionButton();
+      this.refreshStagedHalo();
+      return;
+    }
+
     if (this.selection.kind === "protagonist") {
+      const inv = this.state.protagonist.inventory;
       this.panelTitle.setText("Protagonist");
       this.panelLine1.setText(
         `HP ${Math.max(0, this.state.protagonist.currentHP)}/${this.state.protagonist.maxHP} · AP ${this.state.protagonist.currentAP}/${this.state.protagonist.maxAP}`,
       );
       this.panelLine2.setText(
-        `Position (${this.state.protagonist.position.col}, ${this.state.protagonist.position.row})`,
+        `Medkits: ${inv.medkit} · Flashbangs: ${inv.flashbang}`,
       );
     } else if (this.selection.kind === "enemy") {
       const enemyId = this.selection.id;
@@ -702,8 +816,9 @@ export class RunScene extends Phaser.Scene {
         this.panelTitle.setText(
           found.kind === "melee" ? "Melee alien" : "Ranged alien",
         );
+        const stunSuffix = found.stunnedTurns > 0 ? " · Stunned" : "";
         this.panelLine1.setText(
-          `HP ${Math.max(0, found.currentHP)}/${found.maxHP} · AP ${found.currentAP}/${found.maxAP}`,
+          `HP ${Math.max(0, found.currentHP)}/${found.maxHP} · AP ${found.currentAP}/${found.maxAP}${stunSuffix}`,
         );
         this.panelLine2.setText(
           `Position (${found.position.col}, ${found.position.row})`,
@@ -714,14 +829,39 @@ export class RunScene extends Phaser.Scene {
         this.panelLine2.setText("");
       }
     } else {
-      const tile =
-        this.state.map.tiles[this.selection.pos.row]?.[this.selection.pos.col];
+      const selPos = this.selection.pos;
+      const tile = this.state.map.tiles[selPos.row]?.[selPos.col];
+      const itemHere = this.state.itemsOnMap.find(
+        (i) => i.position.col === selPos.col && i.position.row === selPos.row,
+      );
       if (tile && tile.kind === "exit") {
         this.panelTitle.setText(EXIT_TITLE[tile.exitType]);
         this.panelLine1.setText(
           `Trait gate: ${tile.traitGate === "athletic" ? "Athletic" : "—"}`,
         );
         this.panelLine2.setText(EXIT_CAPTION[tile.exitType]);
+      } else if (itemHere) {
+        const cost = apCostToReach(
+          this.state.protagonist.position,
+          this.selection.pos,
+          this.state.map,
+          enemyTiles(this.state),
+        );
+        const reachable =
+          Number.isFinite(cost) &&
+          cost <= this.state.protagonist.currentAP &&
+          cost > 0;
+        this.panelTitle.setText(
+          itemHere.kind === "medkit" ? "Item — Medkit" : "Item — Flashbang",
+        );
+        this.panelLine1.setText(
+          reachable ? `Reachable · cost ${cost} AP` : "Out of range",
+        );
+        this.panelLine2.setText(
+          itemHere.kind === "medkit"
+            ? `Heals ${balance.ITEM_MEDKIT_HEAL} HP on use`
+            : "Stuns adjacent aliens for 1 turn",
+        );
       } else {
         const kind = tile?.kind ?? "—";
         const cost = apCostToReach(
@@ -748,68 +888,174 @@ export class RunScene extends Phaser.Scene {
   }
 
   private refreshActionButton(): void {
-    const mode = this.computeActionMode();
-    this.currentActionMode = mode;
-    if (mode === "hidden") {
+    const slots = this.computeActionSlots();
+    this.currentActionMode = slots[0]?.mode ?? "hidden";
+    this.currentActionMode2 = slots[1]?.mode ?? "hidden";
+    const btnW = 132;
+    const btnH = 36;
+    const baseX = viewport.WORKING_WIDTH - btnW - 12;
+    const btnY = PANEL_Y + (PANEL_HEIGHT - btnH) / 2;
+    if (slots.length === 0) {
       this.actionRect.setVisible(false);
       this.actionLabel.setVisible(false);
+      this.actionRect2.setVisible(false);
+      this.actionLabel2.setVisible(false);
       return;
     }
-    this.actionRect.setVisible(true);
-    this.actionLabel.setVisible(true);
-    if (mode === "confirm-move") {
-      this.actionLabel.setText("Confirm Move").setColor(COLOR.text);
-      this.actionRect.setFillStyle(COLOR.buttonBg);
-    } else if (mode === "confirm-attack") {
-      this.actionLabel.setText("Confirm Attack").setColor(COLOR.text);
-      this.actionRect.setFillStyle(COLOR.buttonBgAttack);
-    } else {
+    if (slots.length === 1) {
+      const s = slots[0];
+      this.actionRect
+        .setVisible(true)
+        .setPosition(baseX, btnY)
+        .setSize(btnW, btnH)
+        .setFillStyle(s.fill);
       this.actionLabel
-        .setText(`Attack (${balance.ATTACK_AP_COST} AP)`)
+        .setVisible(true)
+        .setPosition(baseX + btnW / 2, btnY + btnH / 2)
+        .setText(s.label)
+        .setFontSize("16px")
         .setColor(COLOR.text);
-      this.actionRect.setFillStyle(COLOR.buttonBgAttack);
+      this.actionRect2.setVisible(false);
+      this.actionLabel2.setVisible(false);
+      return;
     }
+    // Two slots — split the 132 px area into two 62 px buttons with an 8 px gap.
+    const halfW = 62;
+    const gap = 8;
+    const x1 = baseX;
+    const x2 = baseX + halfW + gap;
+    const a = slots[0];
+    const b = slots[1];
+    this.actionRect
+      .setVisible(true)
+      .setPosition(x1, btnY)
+      .setSize(halfW, btnH)
+      .setFillStyle(a.fill);
+    this.actionLabel
+      .setVisible(true)
+      .setPosition(x1 + halfW / 2, btnY + btnH / 2)
+      .setText(a.label)
+      .setFontSize("13px")
+      .setColor(COLOR.text);
+    this.actionRect2
+      .setVisible(true)
+      .setPosition(x2, btnY)
+      .setSize(halfW, btnH)
+      .setFillStyle(b.fill);
+    this.actionLabel2
+      .setVisible(true)
+      .setPosition(x2 + halfW / 2, btnY + btnH / 2)
+      .setText(b.label);
   }
 
-  private computeActionMode(): ActionMode {
-    if (this.state.activeTurn !== "player") return "hidden";
-    if (this.state.protagonist.currentHP <= 0) return "hidden";
+  /**
+   * Compute the 0–2 buttons that should be visible in the action area
+   * for the current state. The first slot is the "primary" button at the
+   * existing 132 px position; if a second slot is present, both shrink
+   * to 62 px side-by-side (per spec 0010 layout rule).
+   */
+  private computeActionSlots(): ActionSlot[] {
+    if (this.state.activeTurn !== "player") return [];
+    if (this.state.protagonist.currentHP <= 0) return [];
+    // Staged actions always collapse to a single confirm button.
     if (this.staged?.kind === "move") {
       if (
         this.selection.kind === "tile" &&
         this.selection.pos.col === this.staged.pos.col &&
         this.selection.pos.row === this.staged.pos.row
       ) {
-        return "confirm-move";
+        return [
+          { mode: "confirm-move", label: "Confirm Move", fill: COLOR.buttonBg },
+        ];
       }
-      return "hidden";
+      return [];
     }
     if (this.staged?.kind === "attack") {
       if (
         this.selection.kind === "enemy" &&
         this.selection.id === this.staged.targetId
       ) {
-        return "confirm-attack";
+        return [
+          {
+            mode: "confirm-attack",
+            label: "Confirm Attack",
+            fill: COLOR.buttonBgAttack,
+          },
+        ];
       }
-      return "hidden";
+      return [];
     }
-    // No stage: maybe show "Attack (2 AP)" if selection is an adjacent enemy
-    // and player has the AP.
+    if (this.staged?.kind === "use-item") {
+      const itemKind = this.staged.itemKind;
+      const label = itemKind === "medkit" ? "Confirm Medkit" : "Confirm Flash";
+      const mode: ActionMode =
+        itemKind === "medkit" ? "confirm-medkit" : "confirm-flashbang";
+      return [{ mode, label, fill: COLOR.buttonBg }];
+    }
+    // No stage. Prefer adjacent-enemy attack stage if applicable.
     if (this.selection.kind === "enemy") {
-      const enemyId = this.selection.id;
-      const target = this.state.enemies.find((e) => e.id === enemyId);
-      if (!target) return "hidden";
-      const dist =
-        Math.abs(target.position.col - this.state.protagonist.position.col) +
-        Math.abs(target.position.row - this.state.protagonist.position.row);
-      if (
-        dist === 1 &&
-        this.state.protagonist.currentAP >= balance.ATTACK_AP_COST
-      ) {
-        return "stage-attack";
+      const target = this.state.enemies.find(
+        (e) => e.id === (this.selection as { id: string }).id,
+      );
+      if (target) {
+        const dist =
+          Math.abs(target.position.col - this.state.protagonist.position.col) +
+          Math.abs(target.position.row - this.state.protagonist.position.row);
+        if (
+          dist === 1 &&
+          this.state.protagonist.currentAP >= balance.ATTACK_AP_COST
+        ) {
+          return [
+            {
+              mode: "stage-attack",
+              label: `Attack (${balance.ATTACK_AP_COST} AP)`,
+              fill: COLOR.buttonBgAttack,
+            },
+          ];
+        }
       }
     }
-    return "hidden";
+    // Otherwise — protagonist selected and no stage — surface item-use
+    // buttons for whatever the player carries.
+    if (this.selection.kind === "protagonist") {
+      const slots: ActionSlot[] = [];
+      const inv = this.state.protagonist.inventory;
+      const canMedkit =
+        inv.medkit > 0 &&
+        this.state.protagonist.currentAP >= balance.USE_ITEM_AP_COST &&
+        this.state.protagonist.currentHP < this.state.protagonist.maxHP;
+      const canFlash =
+        inv.flashbang > 0 &&
+        this.state.protagonist.currentAP >= balance.USE_ITEM_AP_COST;
+      // Long-form labels when only one button is present; short-form when
+      // both fit. Refresh chooses the layout based on slot count.
+      if (canMedkit && canFlash) {
+        slots.push({
+          mode: "stage-medkit",
+          label: `Med ×${inv.medkit}`,
+          fill: COLOR.buttonBg,
+        });
+        slots.push({
+          mode: "stage-flashbang",
+          label: `Flash ×${inv.flashbang}`,
+          fill: COLOR.buttonBg,
+        });
+      } else if (canMedkit) {
+        slots.push({
+          mode: "stage-medkit",
+          label: `Use Medkit (${balance.USE_ITEM_AP_COST} AP)`,
+          fill: COLOR.buttonBg,
+        });
+      } else if (canFlash) {
+        slots.push({
+          mode: "stage-flashbang",
+          label: `Use Flashbang (${balance.USE_ITEM_AP_COST} AP)`,
+          fill: COLOR.buttonBg,
+        });
+      }
+      return slots;
+    }
+    return [];
   }
 
   // ----- Input handling -----
@@ -914,10 +1160,17 @@ export class RunScene extends Phaser.Scene {
     this.refreshActionButton();
   }
 
-  /** Single click handler for the panel action button. */
-  private handleActionButton(): void {
+  /**
+   * Click handler for the panel action buttons. Slot 1 is the primary
+   * button (`actionRect`); slot 2 is the optional secondary button
+   * (`actionRect2`) used by the two-item layout. Dispatch is by the
+   * mode currently held in the corresponding `currentActionMode` /
+   * `currentActionMode2` field, set by `refreshActionButton`.
+   */
+  private handleActionButton(slot: 1 | 2): void {
     if (this.isInputLocked) return;
-    switch (this.currentActionMode) {
+    const mode = slot === 1 ? this.currentActionMode : this.currentActionMode2;
+    switch (mode) {
       case "confirm-move":
         this.commitStagedMove();
         break;
@@ -931,9 +1184,83 @@ export class RunScene extends Phaser.Scene {
           this.refreshActionButton();
         }
         break;
+      case "stage-medkit":
+        this.staged = { kind: "use-item", itemKind: "medkit" };
+        this.refreshActionButton();
+        break;
+      case "stage-flashbang":
+        this.staged = { kind: "use-item", itemKind: "flashbang" };
+        this.refreshActionButton();
+        break;
+      case "confirm-medkit":
+        this.commitUseMedkit();
+        break;
+      case "confirm-flashbang":
+        this.commitUseFlashbang();
+        break;
       case "hidden":
         break;
     }
+  }
+
+  // ----- Item use commits (spec 0010) -----
+
+  private commitUseMedkit(): void {
+    if (this.staged?.kind !== "use-item" || this.staged.itemKind !== "medkit")
+      return;
+    if (this.state.activeTurn !== "player") return;
+    const result = useMedkit(this.state);
+    if (!result.ok) {
+      // Preserve the staged item for "insufficient-ap" / "no-item" — the
+      // player can still cancel by tapping elsewhere. `at-full-hp` clears
+      // the stage so the user isn't stuck with a button that won't fire.
+      if (result.reason === "at-full-hp") {
+        this.staged = null;
+        this.refreshAll();
+      }
+      return;
+    }
+    this.state = result.state;
+    this.staged = null;
+    this.refreshAll();
+  }
+
+  private commitUseFlashbang(): void {
+    if (
+      this.staged?.kind !== "use-item" ||
+      this.staged.itemKind !== "flashbang"
+    )
+      return;
+    if (this.state.activeTurn !== "player") return;
+    const result = useFlashbang(this.state);
+    if (!result.ok) return;
+    this.state = result.state;
+    this.staged = null;
+    if (result.stunned === 0) {
+      this.showTransientPanelHint("No enemies in range");
+    }
+    this.refreshAll();
+  }
+
+  /**
+   * Spec 0010: render `text` in the panel for `TRANSIENT_HINT_MS` ms,
+   * then refresh from the current selection. Selection changes during
+   * the hint window override it (the user's most recent action wins).
+   */
+  private showTransientPanelHint(text: string): void {
+    this.transientPanelHint = text;
+    this.transientPanelHintUntil = this.time.now + TRANSIENT_HINT_MS;
+    this.refreshPanel();
+    this.time.delayedCall(TRANSIENT_HINT_MS, () => {
+      // Only refresh if we haven't been overridden by another hint or a
+      // selection change. The until-timestamp tells us whether we're
+      // still the most recent hint.
+      if (this.time.now >= this.transientPanelHintUntil) {
+        this.transientPanelHintUntil = 0;
+        this.transientPanelHint = "";
+        this.refreshPanel();
+      }
+    });
   }
 
   // ----- Player move -----
@@ -999,6 +1326,13 @@ export class RunScene extends Phaser.Scene {
   }
 
   private afterPlayerMove(): void {
+    // Spec 0010: pick up any item at the protagonist's destination tile
+    // before refreshing or running the exit check, so a single move can
+    // collect an item *and* end the run on a connector tile if those
+    // happen to coincide.
+    const pickup = pickupItemAt(this.state, this.state.protagonist.position);
+    this.state = pickup.state;
+
     const px = tileToPixel(this.state.protagonist.position, this.gridCfg);
     this.protagonistSprite.setPosition(
       px.x + TILE_SIZE / 2,
@@ -1049,7 +1383,13 @@ export class RunScene extends Phaser.Scene {
     this.isAnimating = true;
     const targetSprite = this.enemySprites.get(targetId);
     if (targetSprite) {
-      this.flashSprite(targetSprite, COLOR.enemyMelee);
+      // Spec 0010: a stunned-and-hit alien must restore to grey, not red,
+      // so resolve the post-flash color from current state at flash-end.
+      const targetEnemy = this.state.enemies.find((e) => e.id === targetId);
+      const restoreColor = targetEnemy
+        ? this.enemyFillColor(targetEnemy)
+        : COLOR.enemyMelee;
+      this.flashSprite(targetSprite, restoreColor);
     }
     this.refreshHpBars();
     this.refreshEnemySprites();
@@ -1098,6 +1438,22 @@ export class RunScene extends Phaser.Scene {
       return;
     }
     const enemy = this.state.enemies[enemyIndex];
+    // Spec 0010: stunned enemies skip their turn entirely. Decrement on
+    // skip so the stun wears off after exactly one enemy phase.
+    if (enemy.stunnedTurns > 0) {
+      this.state = {
+        ...this.state,
+        enemies: this.state.enemies.map((e) =>
+          e.id === enemy.id ? { ...e, stunnedTurns: e.stunnedTurns - 1 } : e,
+        ),
+      };
+      this.refreshEnemySprites();
+      if (this.selection.kind === "enemy" && this.selection.id === enemy.id) {
+        this.refreshPanel();
+      }
+      this.runEnemiesSequentially(enemyIndex + 1);
+      return;
+    }
     this.tryEnemyAct(enemy.id, enemyIndex);
   }
 

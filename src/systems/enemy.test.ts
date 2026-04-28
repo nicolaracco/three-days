@@ -41,6 +41,7 @@ describe("Enemy union", () => {
       currentHP: 3,
       maxHP: 3,
       weaponId: "improvised-melee",
+      stunnedTurns: 0,
     };
     const ranged: Enemy = {
       id: "r",
@@ -51,6 +52,7 @@ describe("Enemy union", () => {
       currentHP: 3,
       maxHP: 3,
       weaponId: "improvised-melee",
+      stunnedTurns: 0,
     };
     expect(melee.kind).toBe("melee");
     expect(ranged.kind).toBe("ranged");

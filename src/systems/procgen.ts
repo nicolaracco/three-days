@@ -22,6 +22,7 @@ import {
   oppositeSide,
 } from "./chunk";
 import type { TilePos } from "./grid";
+import type { Item } from "./item";
 import type { Day1Map, ExitTile, Tile } from "./map";
 import type { Rng } from "./rng";
 
@@ -353,7 +354,21 @@ function materialize(
     }
   }
 
-  return { width, height, start, tiles, spawnSlots };
+  // Same translation pattern for chunk-authored item slots (spec 0010).
+  const itemsOnMap: Item[] = [];
+  for (const p of result.placed) {
+    for (const s of p.chunk.itemSlots) {
+      itemsOnMap.push({
+        kind: s.kind,
+        position: {
+          col: p.offset.col - minCol + s.col,
+          row: p.offset.row - minRow + s.row,
+        },
+      });
+    }
+  }
+
+  return { width, height, start, tiles, spawnSlots, itemsOnMap };
 }
 
 /** Convert a chunk tile into a map tile — door becomes floor. */

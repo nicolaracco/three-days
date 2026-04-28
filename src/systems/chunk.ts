@@ -25,6 +25,7 @@ import interiorA from "../data/chunks/interior-room-a.json";
 import interiorB from "../data/chunks/interior-room-b.json";
 import interiorC from "../data/chunks/interior-room-c.json";
 import type { TilePos } from "./grid";
+import type { ItemKind } from "./item";
 import type { FloorTile, WallTile } from "./map";
 
 export interface DoorTile {
@@ -50,6 +51,17 @@ export interface Connector {
   row: number;
 }
 
+/**
+ * Spec 0010: a chunk-local slot that materializes into one `Item` on
+ * `Day1Map.itemsOnMap`. Authors place these on floor tiles inside the
+ * chunk; procgen translates them to absolute coordinates.
+ */
+export interface ItemSlot {
+  col: number;
+  row: number;
+  kind: ItemKind;
+}
+
 export interface Chunk {
   id: string;
   kind: ChunkKind;
@@ -59,6 +71,8 @@ export interface Chunk {
   start: TilePos | null;
   /** Chunk-local positions where enemies can spawn. */
   spawnSlots: TilePos[];
+  /** Chunk-local item placements (spec 0010). Empty array allowed. */
+  itemSlots: ItemSlot[];
   /** Edges where this chunk can connect to other chunks. */
   connectors: Connector[];
   /** Indexed [row][col] to match human-readable JSON authoring order. */
@@ -110,6 +124,12 @@ interface RawConnector {
   row: number;
 }
 
+interface RawItemSlot {
+  col: number;
+  row: number;
+  kind: string;
+}
+
 interface RawChunk {
   id: string;
   kind: string;
@@ -117,6 +137,7 @@ interface RawChunk {
   height: number;
   start: TilePos | null;
   spawnSlots: TilePos[];
+  itemSlots?: RawItemSlot[];
   connectors: RawConnector[];
   tiles: string[][];
 }
@@ -144,6 +165,14 @@ function liftChunk(raw: RawChunk): Chunk {
       );
     }
   }
+  const itemSlots: ItemSlot[] = (raw.itemSlots ?? []).map((s) => {
+    if (s.kind !== "medkit" && s.kind !== "flashbang") {
+      throw new Error(
+        `Chunk ${raw.id}: itemSlot at (${s.col}, ${s.row}) has invalid kind '${s.kind}'`,
+      );
+    }
+    return { col: s.col, row: s.row, kind: s.kind };
+  });
   return {
     id: raw.id,
     kind: raw.kind,
@@ -151,6 +180,7 @@ function liftChunk(raw: RawChunk): Chunk {
     height: raw.height,
     start: raw.start,
     spawnSlots: raw.spawnSlots,
+    itemSlots,
     connectors: raw.connectors as Connector[],
     tiles: raw.tiles.map((row) => row.map((s) => liftTile(s, raw.id))),
   };

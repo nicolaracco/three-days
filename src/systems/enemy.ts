@@ -25,6 +25,12 @@ export interface Enemy {
   currentHP: number;
   maxHP: number;
   weaponId: string;
+  /**
+   * Spec 0010 — turns the enemy will be skipped during the enemy turn.
+   * Decremented once per skip; zero means "act normally." Initialized
+   * to 0 by `loadDay1Enemies`.
+   */
+  stunnedTurns: number;
 }
 
 /**
@@ -48,6 +54,7 @@ export function loadDay1Enemies(): Enemy[] {
       currentHP: balance.ENEMY_HP,
       maxHP: balance.ENEMY_HP,
       weaponId: raw.weaponId,
+      stunnedTurns: 0,
     };
   });
 }

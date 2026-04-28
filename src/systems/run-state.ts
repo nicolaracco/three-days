@@ -4,11 +4,16 @@
  * Spec 0003 adds `enemies` and `activeTurn`. The `endTurn` reducer from
  * spec 0002 is generalized into `advanceTurn`, which transitions the cycle
  * in either direction based on the current `activeTurn`.
+ *
+ * Spec 0010 adds `protagonist.inventory` and `itemsOnMap`, and exposes
+ * `useMedkit` / `useFlashbang` reducers that mutate them along with AP
+ * and HP.
  */
 
 import balance from "../data/balance.json";
 import { type Enemy, loadDay1Enemies } from "./enemy";
 import type { TilePos } from "./grid";
+import { type Inventory, type Item, EMPTY_INVENTORY } from "./item";
 import type { Day1Map } from "./map";
 import { bfs } from "./pathfind";
 import { generateMap } from "./procgen";
@@ -24,8 +29,10 @@ export interface RunState {
     currentHP: number;
     maxHP: number;
     weaponId: string;
+    inventory: Inventory;
   };
   enemies: Enemy[];
+  itemsOnMap: Item[];
   activeTurn: ActiveTurn;
   map: Day1Map;
   seed: number;
@@ -55,6 +62,7 @@ export function createRunStateFromMap(opts: {
   seed: number;
   map: Day1Map;
   enemies?: Enemy[];
+  itemsOnMap?: Item[];
 }): RunState {
   return {
     protagonist: {
@@ -64,8 +72,10 @@ export function createRunStateFromMap(opts: {
       currentHP: balance.PROTAGONIST_HP,
       maxHP: balance.PROTAGONIST_HP,
       weaponId: "improvised-melee",
+      inventory: { ...EMPTY_INVENTORY },
     },
     enemies: opts.enemies ?? loadDay1Enemies(),
+    itemsOnMap: opts.itemsOnMap ?? opts.map.itemsOnMap.slice(),
     activeTurn: "player",
     map: opts.map,
     seed: opts.seed,
@@ -194,6 +204,87 @@ export function advanceTurn(state: RunState): RunState {
     protagonist: {
       ...state.protagonist,
       currentAP: state.protagonist.maxAP,
+    },
+  };
+}
+
+// ----- Items (spec 0010) -----
+
+/**
+ * Tagged result for `useMedkit` / `useFlashbang`. The reasons are
+ * disjoint per item:
+ *   - `useMedkit`: `"no-item" | "insufficient-ap" | "at-full-hp"`
+ *   - `useFlashbang`: `"no-item" | "insufficient-ap"`
+ *
+ * Captured in a single union for ergonomics; callers narrow on `ok`
+ * and on the specific reason as needed.
+ */
+export type UseItemResult =
+  | { ok: true; state: RunState; stunned: number }
+  | { ok: false; reason: "no-item" | "insufficient-ap" | "at-full-hp" };
+
+/**
+ * Heal the protagonist by `ITEM_MEDKIT_HEAL` (capped at `maxHP`),
+ * decrement `inventory.medkit`, decrement `currentAP`. Rejects if no
+ * medkit, no AP, or already at full HP (per spec 0010 open-question
+ * resolution: at-full-hp use is a no-op rejection, not a wasted item).
+ */
+export function useMedkit(state: RunState): UseItemResult {
+  const p = state.protagonist;
+  if (p.inventory.medkit <= 0) return { ok: false, reason: "no-item" };
+  if (p.currentAP < balance.USE_ITEM_AP_COST) {
+    return { ok: false, reason: "insufficient-ap" };
+  }
+  if (p.currentHP >= p.maxHP) return { ok: false, reason: "at-full-hp" };
+  const nextHP = Math.min(p.maxHP, p.currentHP + balance.ITEM_MEDKIT_HEAL);
+  return {
+    ok: true,
+    stunned: 0,
+    state: {
+      ...state,
+      protagonist: {
+        ...p,
+        currentHP: nextHP,
+        currentAP: p.currentAP - balance.USE_ITEM_AP_COST,
+        inventory: { ...p.inventory, medkit: p.inventory.medkit - 1 },
+      },
+    },
+  };
+}
+
+/**
+ * Stun every enemy in the protagonist's 4-neighborhood for one enemy
+ * turn (`stunnedTurns = 1`). Decrement `inventory.flashbang` and
+ * `currentAP` even if no enemies were adjacent — the player chose to
+ * spend; the wasted-bang feedback is the scene's concern (spec 0010).
+ */
+export function useFlashbang(state: RunState): UseItemResult {
+  const p = state.protagonist;
+  if (p.inventory.flashbang <= 0) return { ok: false, reason: "no-item" };
+  if (p.currentAP < balance.USE_ITEM_AP_COST) {
+    return { ok: false, reason: "insufficient-ap" };
+  }
+  let stunnedCount = 0;
+  const nextEnemies = state.enemies.map((e) => {
+    const dx = Math.abs(e.position.col - p.position.col);
+    const dy = Math.abs(e.position.row - p.position.row);
+    if (dx + dy === 1) {
+      stunnedCount++;
+      return { ...e, stunnedTurns: 1 };
+    }
+    return e;
+  });
+  return {
+    ok: true,
+    stunned: stunnedCount,
+    state: {
+      ...state,
+      enemies: nextEnemies,
+      protagonist: {
+        ...p,
+        currentAP: p.currentAP - balance.USE_ITEM_AP_COST,
+        inventory: { ...p.inventory, flashbang: p.inventory.flashbang - 1 },
+      },
     },
   };
 }

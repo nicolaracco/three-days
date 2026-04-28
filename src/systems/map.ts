@@ -8,6 +8,7 @@
  */
 
 import type { TilePos } from "./grid";
+import type { Item } from "./item";
 import day1MapJson from "../data/day1-static-map.json";
 
 export interface FloorTile {
@@ -42,6 +43,12 @@ export interface Day1Map {
    * pass `loadDay1Enemies()` with hardcoded positions instead).
    */
   spawnSlots: TilePos[];
+  /**
+   * Spec 0010: items placed at chunk-authored item slots, translated to
+   * absolute coordinates. Procgen-produced maps populate this; the
+   * static fixture (`loadDay1Map`) returns an empty array.
+   */
+  itemsOnMap: Item[];
 }
 
 /**
@@ -70,5 +77,6 @@ export function loadDay1Map(): Day1Map {
       }),
     ),
     spawnSlots: [],
+    itemsOnMap: [],
   };
 }
