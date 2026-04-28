@@ -24,6 +24,7 @@
  */
 
 import Phaser from "phaser";
+import { BUILD_SHA } from "../build-info";
 import balance from "../data/balance.json";
 import viewport from "../data/viewport.json";
 import { commitAttack } from "../systems/combat";
@@ -387,6 +388,19 @@ export class RunScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5)
       .setScrollFactor(0)
       .setVisible(false);
+
+    // Build SHA tag (spec 0008): bottom-right of the panel, anchored at
+    // origin (1, 1), screen-fixed so it survives camera scroll under
+    // ADR-0011. Placed below the action button's vertical band so it
+    // never overlaps any of the button's modes.
+    this.add
+      .text(viewport.WORKING_WIDTH - 6, PANEL_Y + PANEL_HEIGHT - 4, BUILD_SHA, {
+        fontFamily: "monospace",
+        fontSize: "9px",
+        color: COLOR.textDim,
+      })
+      .setOrigin(1, 1)
+      .setScrollFactor(0);
   }
 
   private renderOrientationOverlay(): void {
