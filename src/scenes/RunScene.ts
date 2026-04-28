@@ -42,9 +42,11 @@ import { apCostToReach, reachableTiles } from "../systems/movement";
 import {
   type RunState,
   advanceTurn,
+  checkRunEnd,
   commitMove,
   createRunState,
   enemyTiles,
+  transitionToDay2,
   useFlashbang,
   useMedkit,
 } from "../systems/run-state";
@@ -204,12 +206,20 @@ export class RunScene extends Phaser.Scene {
   private transientPanelHint = "";
 
   private orientationOverlay!: Phaser.GameObjects.Container;
-  private deathOverlay!: Phaser.GameObjects.Container;
-  private deathOverlayText!: Phaser.GameObjects.Text;
-  private escapeOverlay!: Phaser.GameObjects.Container;
-  private escapeOverlayText!: Phaser.GameObjects.Text;
-  /** Set when the protagonist steps onto an exit. Freezes input. */
-  private escapedVia: ExitTile["exitType"] | null = null;
+  /**
+   * Spec 0011 — unified run-end overlay (replaces the per-cause death
+   * and escape overlays from earlier specs). Visibility tracks
+   * `state.runEnd !== null`; copy is computed in `showRunEndOverlay`.
+   */
+  private runEndOverlay!: Phaser.GameObjects.Container;
+  private runEndOverlayText!: Phaser.GameObjects.Text;
+  /**
+   * Spec 0011 — `init`-stage payload used to skip the procgen Day-1
+   * setup and adopt a pre-built `RunState` (the post-`transitionToDay2`
+   * state). The scene calls `this.scene.restart({ initialState })` to
+   * flip into Day 2; `create` reads this on the next tick.
+   */
+  private initialState: RunState | null = null;
 
   constructor() {
     super({ key: "RunScene" });
@@ -221,14 +231,24 @@ export class RunScene extends Phaser.Scene {
       this.isOrientationLocked ||
       this.state.activeTurn === "enemy" ||
       this.isAnimating ||
-      this.state.protagonist.currentHP <= 0 ||
-      this.escapedVia !== null
+      this.state.runEnd !== null
     );
+  }
+
+  /**
+   * Spec 0011 — receive the transition payload before `create` runs.
+   * Phaser calls `init(data)` on every (re)start; `data.initialState`
+   * carries the post-`transitionToDay2` state we want to adopt
+   * verbatim instead of running procgen for a fresh Day-1 run.
+   */
+  init(data?: { initialState?: RunState }): void {
+    this.initialState = data?.initialState ?? null;
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(COLOR.sceneBg);
-    this.state = createRunState({ seed: Date.now() });
+    this.state = this.initialState ?? createRunState({ seed: Date.now() });
+    this.initialState = null;
 
     // Map placement is per-axis: center within the viewport / map-area band
     // when the map is smaller, otherwise pin at the top-left of the band so
@@ -258,8 +278,7 @@ export class RunScene extends Phaser.Scene {
     this.renderHUD();
     this.renderPanel();
     this.renderOrientationOverlay();
-    this.renderDeathOverlay();
-    this.renderEscapeOverlay();
+    this.renderRunEndOverlay();
 
     // Configure camera scroll. Bounds are exactly the viewport when the map
     // fits, so scroll is clamped to (0, 0); otherwise extended by the map's
@@ -556,7 +575,12 @@ export class RunScene extends Phaser.Scene {
     this.orientationOverlay.setDepth(1000).setScrollFactor(0).setVisible(false);
   }
 
-  private renderDeathOverlay(): void {
+  /**
+   * Spec 0011 — unified run-end overlay covering both wins and losses.
+   * Replaces the per-cause death/escape overlays from earlier specs.
+   * Copy is computed in `showRunEndOverlay`.
+   */
+  private renderRunEndOverlay(): void {
     const bg = this.add
       .rectangle(
         0,
@@ -567,7 +591,7 @@ export class RunScene extends Phaser.Scene {
         0.94,
       )
       .setOrigin(0, 0);
-    this.deathOverlayText = this.add
+    this.runEndOverlayText = this.add
       .text(viewport.WORKING_WIDTH / 2, viewport.WORKING_HEIGHT / 2, "", {
         fontFamily: "monospace",
         fontSize: "18px",
@@ -576,32 +600,8 @@ export class RunScene extends Phaser.Scene {
         wordWrap: { width: viewport.WORKING_WIDTH - 32 },
       })
       .setOrigin(0.5, 0.5);
-    this.deathOverlay = this.add.container(0, 0, [bg, this.deathOverlayText]);
-    this.deathOverlay.setDepth(1001).setScrollFactor(0).setVisible(false);
-  }
-
-  private renderEscapeOverlay(): void {
-    const bg = this.add
-      .rectangle(
-        0,
-        0,
-        viewport.WORKING_WIDTH,
-        viewport.WORKING_HEIGHT,
-        0x000000,
-        0.94,
-      )
-      .setOrigin(0, 0);
-    this.escapeOverlayText = this.add
-      .text(viewport.WORKING_WIDTH / 2, viewport.WORKING_HEIGHT / 2, "", {
-        fontFamily: "monospace",
-        fontSize: "18px",
-        color: COLOR.text,
-        align: "center",
-        wordWrap: { width: viewport.WORKING_WIDTH - 32 },
-      })
-      .setOrigin(0.5, 0.5);
-    this.escapeOverlay = this.add.container(0, 0, [bg, this.escapeOverlayText]);
-    this.escapeOverlay.setDepth(1001).setScrollFactor(0).setVisible(false);
+    this.runEndOverlay = this.add.container(0, 0, [bg, this.runEndOverlayText]);
+    this.runEndOverlay.setDepth(1001).setScrollFactor(0).setVisible(false);
   }
 
   // ----- Refresh routines -----
@@ -703,11 +703,14 @@ export class RunScene extends Phaser.Scene {
   }
 
   private refreshTurnIndicator(): void {
+    // Spec 0011: prefix with "D2 · " when on Day 2 so the player can
+    // tell which act they're in at a glance.
+    const prefix = this.state.currentDay === 2 ? "D2 · " : "";
     if (this.state.activeTurn === "player") {
-      this.turnIndicatorText.setText("Your turn").setColor(COLOR.text);
+      this.turnIndicatorText.setText(`${prefix}Your turn`).setColor(COLOR.text);
     } else {
       this.turnIndicatorText
-        .setText("Enemy turn")
+        .setText(`${prefix}Enemy`)
         .setColor(COLOR.enemyTurnLabel);
     }
   }
@@ -806,16 +809,37 @@ export class RunScene extends Phaser.Scene {
       this.panelLine1.setText(
         `HP ${Math.max(0, this.state.protagonist.currentHP)}/${this.state.protagonist.maxHP} · AP ${this.state.protagonist.currentAP}/${this.state.protagonist.maxAP}`,
       );
-      this.panelLine2.setText(
-        `Medkits: ${inv.medkit} · Flashbangs: ${inv.flashbang}`,
-      );
+      // Spec 0011: on Day 2, panel line2 surfaces the objective instead
+      // of the inventory line. Inventory is still readable via the
+      // action-area item buttons.
+      if (this.state.currentDay === 2 && this.state.day2MapKey === "lobby") {
+        this.panelLine2.setText("Eliminate the commander");
+      } else if (
+        this.state.currentDay === 2 &&
+        this.state.day2MapKey === "rooftop"
+      ) {
+        const survived = Math.min(
+          this.state.turn,
+          balance.ROOFTOP_SURVIVE_TURNS,
+        );
+        this.panelLine2.setText(
+          `Survive — ${survived}/${balance.ROOFTOP_SURVIVE_TURNS} turns`,
+        );
+      } else {
+        this.panelLine2.setText(
+          `Medkits: ${inv.medkit} · Flashbangs: ${inv.flashbang}`,
+        );
+      }
     } else if (this.selection.kind === "enemy") {
       const enemyId = this.selection.id;
       const found = this.state.enemies.find((e) => e.id === enemyId);
       if (found) {
-        this.panelTitle.setText(
-          found.kind === "melee" ? "Melee alien" : "Ranged alien",
-        );
+        const title = found.isCommander
+          ? "Alien commander"
+          : found.kind === "melee"
+            ? "Melee alien"
+            : "Ranged alien";
+        this.panelTitle.setText(title);
         const stunSuffix = found.stunnedTurns > 0 ? " · Stunned" : "";
         this.panelLine1.setText(
           `HP ${Math.max(0, found.currentHP)}/${found.maxHP} · AP ${found.currentAP}/${found.maxAP}${stunSuffix}`,
@@ -1339,25 +1363,76 @@ export class RunScene extends Phaser.Scene {
       px.y + TILE_SIZE / 2,
     );
     this.refreshAll();
-    // Spec 0009: stepping onto an exit ends the run. Trait gating is
-    // displayed but not enforced this spec — TODO when traits land.
+    // Spec 0011: stepping onto a Day-1 exit fires the day chain — the
+    // scene restarts with the post-`transitionToDay2` state. On Day 2
+    // there are no exit tiles (per GDD §9.3), so this branch is dead
+    // code there; the runEnd check below covers Day-2 win/loss.
     const { col, row } = this.state.protagonist.position;
     const tile = this.state.map.tiles[row]?.[col];
-    if (tile && tile.kind === "exit") {
-      this.handleEscape(tile);
+    if (
+      tile &&
+      tile.kind === "exit" &&
+      this.state.currentDay === 1 &&
+      this.state.runEnd === null
+    ) {
+      this.handleExitWalkOnto(tile);
+      return;
     }
+    // Spec 0011: any state mutation that could change a win/loss bit
+    // funnels through `checkAndApplyRunEnd` so the run-end overlay shows
+    // within one frame of the trigger.
+    this.checkAndApplyRunEnd();
   }
 
-  // ----- Escape -----
+  // ----- Day chain (spec 0011) -----
 
-  private handleEscape(tile: ExitTile): void {
-    this.escapedVia = tile.exitType;
-    const label = tile.exitType === "stairwell" ? "Stairwell" : "Fire-escape";
-    this.escapeOverlayText.setText(
-      `You escaped\nVia ${label} · Turn ${this.state.turn}\n\nRefresh to play another run`,
-    );
-    this.escapeOverlay.setVisible(true);
+  /**
+   * Walked onto a Day-1 exit. Compute the post-transition state and
+   * restart the scene with it as the init payload — Phaser tears down
+   * every world game object on restart, so the next `create` boots a
+   * fresh Day-2 scene with no leftover sprites or layers.
+   */
+  private handleExitWalkOnto(tile: ExitTile): void {
+    const nextState = transitionToDay2(this.state, tile.exitType);
+    this.scene.restart({ initialState: nextState });
+  }
+
+  /**
+   * Idempotent helper around `checkRunEnd`: if the win/loss check fires
+   * on the latest state, surface the run-end overlay. Safe to call from
+   * any post-mutation point in the scene.
+   */
+  private checkAndApplyRunEnd(): void {
+    const next = checkRunEnd(this.state);
+    if (next.runEnd === null || this.state.runEnd !== null) {
+      this.state = next;
+      return;
+    }
+    this.state = next;
+    this.showRunEndOverlay();
     this.refreshAll();
+  }
+
+  /** Spec 0011 — compose and show the run-end summary copy. */
+  private showRunEndOverlay(): void {
+    if (this.state.runEnd === null) return;
+    const turn = this.state.turn;
+    const day2Label =
+      this.state.day2MapKey === "lobby"
+        ? "Lobby"
+        : this.state.day2MapKey === "rooftop"
+          ? "Rooftop"
+          : null;
+    let body: string;
+    if (this.state.runEnd.kind === "won") {
+      body = `You survived\nDay 2 · ${day2Label} · Turn ${turn}`;
+    } else if (this.state.currentDay === 2 && day2Label !== null) {
+      body = `You died\nDay 2 · ${day2Label} · Turn ${turn}`;
+    } else {
+      body = `You died\nDay 1 · Turn ${turn}`;
+    }
+    this.runEndOverlayText.setText(`${body}\n\nRefresh to play another run`);
+    this.runEndOverlay.setVisible(true);
   }
 
   // ----- Player attack -----
@@ -1398,6 +1473,9 @@ export class RunScene extends Phaser.Scene {
     this.time.delayedCall(FLASH_MS, () => {
       this.isAnimating = false;
       this.refreshAll();
+      // Spec 0011: lobby commander death = win. The check is idempotent
+      // so it's safe even if the killed enemy wasn't the commander.
+      this.checkAndApplyRunEnd();
     });
   }
 
@@ -1430,7 +1508,7 @@ export class RunScene extends Phaser.Scene {
 
   private runEnemiesSequentially(enemyIndex: number): void {
     if (this.state.protagonist.currentHP <= 0) {
-      this.handleProtagonistDeath();
+      this.checkAndApplyRunEnd();
       return;
     }
     if (enemyIndex >= this.state.enemies.length) {
@@ -1479,7 +1557,7 @@ export class RunScene extends Phaser.Scene {
       if (this.selection.kind === "protagonist") this.refreshPanel();
       this.time.delayedCall(FLASH_MS, () => {
         if (this.state.protagonist.currentHP <= 0) {
-          this.handleProtagonistDeath();
+          this.checkAndApplyRunEnd();
           return;
         }
         this.tryEnemyAct(enemyId, enemyIndex);
@@ -1489,26 +1567,18 @@ export class RunScene extends Phaser.Scene {
 
   private finishEnemyTurn(): void {
     if (this.state.protagonist.currentHP <= 0) {
-      this.handleProtagonistDeath();
+      this.checkAndApplyRunEnd();
       return;
     }
     this.state = advanceTurn(this.state);
     this.setSelection({ kind: "protagonist" });
     this.refreshAll();
-  }
-
-  // ----- Death -----
-
-  private handleProtagonistDeath(): void {
-    const killer =
-      this.state.enemies[0]?.kind === "melee"
-        ? "Melee alien"
-        : (this.state.enemies[0]?.kind ?? "Unknown");
-    this.deathOverlayText.setText(
-      `You died · Turn ${this.state.turn} · Killed by: ${killer}`,
-    );
-    this.deathOverlay.setVisible(true);
-    this.refreshAll();
+    // Spec 0011: rooftop "survive N turns" win check fires at the start
+    // of a fresh player turn; that's right here. Lobby win is checked
+    // after attacks (where the commander could die), not here, so this
+    // covers only the rooftop case but the helper is idempotent so it's
+    // safe to always call.
+    this.checkAndApplyRunEnd();
   }
 
   // ----- Orientation -----

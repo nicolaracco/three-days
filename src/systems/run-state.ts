@@ -8,18 +8,37 @@
  * Spec 0010 adds `protagonist.inventory` and `itemsOnMap`, and exposes
  * `useMedkit` / `useFlashbang` reducers that mutate them along with AP
  * and HP.
+ *
+ * Spec 0011 adds the day chain: `currentDay`, `day2MapKey`, and `runEnd`,
+ * plus the `transitionToDay2` and `checkRunEnd` reducers. Day-2 maps are
+ * handcrafted and reuse the `Day1Map` shape — the slight name mismatch
+ * is deliberate scope discipline.
  */
 
 import balance from "../data/balance.json";
 import { type Enemy, loadDay1Enemies } from "./enemy";
 import type { TilePos } from "./grid";
 import { type Inventory, type Item, EMPTY_INVENTORY } from "./item";
-import type { Day1Map } from "./map";
+import {
+  type Day1Map,
+  type Day2MapKey,
+  type ExitType,
+  loadDay2Map,
+} from "./map";
 import { bfs } from "./pathfind";
 import { generateMap } from "./procgen";
 import { createRng, type Rng } from "./rng";
 
 export type ActiveTurn = "player" | "enemy";
+
+/**
+ * Spec 0011 — terminal run state. `null` while the run is in progress;
+ * non-null once a win or loss condition has fired. The scene reads this
+ * to lock input and render the run-end overlay.
+ */
+export type RunEnd =
+  | { kind: "won"; reason: "commander-dead" | "survived" }
+  | { kind: "lost"; reason: "killed" };
 
 export interface RunState {
   protagonist: {
@@ -37,6 +56,12 @@ export interface RunState {
   map: Day1Map;
   seed: number;
   turn: number;
+  /** Spec 0011 — `1` for procgen Day-1, `2` after `transitionToDay2`. */
+  currentDay: 1 | 2;
+  /** Spec 0011 — set when the day chain fires; `null` on Day 1. */
+  day2MapKey: Day2MapKey | null;
+  /** Spec 0011 — set by `checkRunEnd` once a win/loss bit is decided. */
+  runEnd: RunEnd | null;
 }
 
 /**
@@ -80,6 +105,9 @@ export function createRunStateFromMap(opts: {
     map: opts.map,
     seed: opts.seed,
     turn: 1,
+    currentDay: 1,
+    day2MapKey: null,
+    runEnd: null,
   };
 }
 
@@ -287,4 +315,82 @@ export function useFlashbang(state: RunState): UseItemResult {
       },
     },
   };
+}
+
+// ----- Day chain (spec 0011) -----
+
+/**
+ * Transition the run from Day 1 to Day 2. The protagonist's HP and
+ * inventory carry forward; the map, enemies, items, and turn counter
+ * reset to the Day-2 authored data. Pure: returns a fresh `RunState`.
+ *
+ * Caller guarantees `state.currentDay === 1` and the player has just
+ * stepped onto an exit tile of `exitType`. Defensive checks live in
+ * the scene, not here — the reducer trusts its input shape.
+ */
+export function transitionToDay2(
+  state: RunState,
+  exitType: ExitType,
+): RunState {
+  const key: Day2MapKey = exitType === "stairwell" ? "lobby" : "rooftop";
+  const bundle = loadDay2Map(key);
+  return {
+    ...state,
+    map: bundle.map,
+    enemies: bundle.enemies,
+    itemsOnMap: bundle.map.itemsOnMap.slice(),
+    activeTurn: "player",
+    turn: 1,
+    currentDay: 2,
+    day2MapKey: key,
+    runEnd: null,
+    protagonist: {
+      ...state.protagonist,
+      position: bundle.map.start,
+      currentAP: state.protagonist.maxAP,
+      // currentHP and inventory carry forward — players keep what they earned.
+    },
+  };
+}
+
+/**
+ * Compute the run's terminal state. Idempotent — once `state.runEnd`
+ * is set, subsequent calls return the input unchanged. The scene calls
+ * this after every state mutation that could change a win/loss bit
+ * (post-attack, post-enemy-turn, post-transition, post-medkit, etc.).
+ *
+ * Win conditions:
+ *   - Day 2 lobby: `commander-dead` once no enemy with `isCommander`
+ *     remains.
+ *   - Day 2 rooftop: `survived` once `turn >= ROOFTOP_SURVIVE_TURNS`
+ *     and the protagonist is alive.
+ *
+ * Loss condition (any day): `killed` once `currentHP <= 0`.
+ *
+ * Day 1 has no win condition — reaching an exit fires `transitionToDay2`,
+ * not a win. So Day-1 returns either `lost` (HP <= 0) or unchanged.
+ */
+export function checkRunEnd(state: RunState): RunState {
+  if (state.runEnd !== null) return state;
+  if (state.protagonist.currentHP <= 0) {
+    return { ...state, runEnd: { kind: "lost", reason: "killed" } };
+  }
+  if (state.currentDay === 2 && state.day2MapKey === "lobby") {
+    const commanderAlive = state.enemies.some(
+      (e) => e.isCommander && e.currentHP > 0,
+    );
+    if (!commanderAlive) {
+      return { ...state, runEnd: { kind: "won", reason: "commander-dead" } };
+    }
+  }
+  if (state.currentDay === 2 && state.day2MapKey === "rooftop") {
+    // turn=1 at start of turn 1; advanceTurn (enemy→player) increments
+    // turn, so turn=N+1 means N full cycles completed. The win fires at
+    // start of turn (ROOFTOP_SURVIVE_TURNS + 1) — i.e. the player has
+    // survived the full N-th turn.
+    if (state.turn > balance.ROOFTOP_SURVIVE_TURNS) {
+      return { ...state, runEnd: { kind: "won", reason: "survived" } };
+    }
+  }
+  return state;
 }

@@ -1,0 +1,155 @@
+{
+  "key": "rooftop",
+  "width": 10,
+  "height": 10,
+  "start": { "col": 5, "row": 5 },
+  "tiles": [
+    [
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall"
+    ]
+  ],
+  "itemsOnMap": [{ "kind": "medkit", "position": { "col": 7, "row": 8 } }],
+  "enemies": [
+    {
+      "id": "rooftop-melee-1",
+      "kind": "melee",
+      "position": { "col": 5, "row": 3 },
+      "weaponId": "improvised-melee"
+    },
+    {
+      "id": "rooftop-melee-2",
+      "kind": "melee",
+      "position": { "col": 1, "row": 4 },
+      "weaponId": "improvised-melee"
+    },
+    {
+      "id": "rooftop-melee-3",
+      "kind": "melee",
+      "position": { "col": 8, "row": 6 },
+      "weaponId": "improvised-melee"
+    },
+    {
+      "id": "rooftop-melee-4",
+      "kind": "melee",
+      "position": { "col": 4, "row": 7 },
+      "weaponId": "improvised-melee"
+    }
+  ]
+}

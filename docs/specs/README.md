@@ -34,3 +34,4 @@ Specs are numbered in the order they're authored, not in the order of the roadma
 | 0008 | [Build version tag](0008-build-version-tag.md)                                          | In progress | N/A — dev ergonomics |
 | 0009 | [Exits — `ExitTile`, two-exit guarantee, escape stub](0009-exits.md)                    | In progress | §13 Day 3 |
 | 0010 | [Items — medkit and flashbang](0010-items.md)                                           | In progress | §13 Day 3 |
+| 0011 | [Day chain — Day-2 maps, transition, objectives, run-end](0011-day-chain.md)            | In progress | §13 Day 4 |

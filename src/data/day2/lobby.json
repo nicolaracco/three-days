@@ -1,0 +1,151 @@
+{
+  "key": "lobby",
+  "width": 10,
+  "height": 10,
+  "start": { "col": 1, "row": 1 },
+  "tiles": [
+    [
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "wall",
+      "floor",
+      "floor",
+      "wall",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "wall",
+      "floor",
+      "floor",
+      "wall",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "wall",
+      "floor",
+      "floor",
+      "wall",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "wall",
+      "floor",
+      "floor",
+      "wall",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "floor",
+      "wall"
+    ],
+    [
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall",
+      "wall"
+    ]
+  ],
+  "itemsOnMap": [{ "kind": "medkit", "position": { "col": 1, "row": 8 } }],
+  "enemies": [
+    {
+      "id": "lobby-melee-1",
+      "kind": "melee",
+      "position": { "col": 8, "row": 1 },
+      "weaponId": "improvised-melee"
+    },
+    {
+      "id": "lobby-melee-2",
+      "kind": "melee",
+      "position": { "col": 4, "row": 5 },
+      "weaponId": "improvised-melee"
+    },
+    {
+      "id": "commander",
+      "kind": "melee",
+      "position": { "col": 8, "row": 8 },
+      "weaponId": "improvised-melee",
+      "maxHP": 6,
+      "isCommander": true
+    }
+  ]
+}

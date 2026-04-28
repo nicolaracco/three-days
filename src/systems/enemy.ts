@@ -31,6 +31,13 @@ export interface Enemy {
    * to 0 by `loadDay1Enemies`.
    */
   stunnedTurns: number;
+  /**
+   * Spec 0011 — the lobby commander. Used by `checkRunEnd` to detect
+   * Day-2 lobby win condition and by the panel to label them as
+   * "Alien commander" instead of "Melee alien." Default false; set
+   * true only by Day-2 lobby authoring.
+   */
+  isCommander: boolean;
 }
 
 /**
@@ -55,6 +62,7 @@ export function loadDay1Enemies(): Enemy[] {
       maxHP: balance.ENEMY_HP,
       weaponId: raw.weaponId,
       stunnedTurns: 0,
+      isCommander: false,
     };
   });
 }

@@ -6,9 +6,11 @@ import { generateMap } from "./procgen";
 import { createRng } from "./rng";
 import {
   advanceTurn,
+  checkRunEnd,
   commitMove,
   createRunState,
   createRunStateFromMap,
+  transitionToDay2,
   useFlashbang,
   useMedkit,
 } from "./run-state";
@@ -353,5 +355,127 @@ describe("useFlashbang (spec 0010)", () => {
     expect(result.state.protagonist.currentAP).toBe(
       state.protagonist.currentAP - balance.USE_ITEM_AP_COST,
     );
+  });
+});
+
+describe("transitionToDay2 (spec 0011)", () => {
+  test("stairwell transitions to lobby with the commander populated", () => {
+    const before = fixtureState();
+    const after = transitionToDay2(before, "stairwell");
+    expect(after.currentDay).toBe(2);
+    expect(after.day2MapKey).toBe("lobby");
+    expect(after.turn).toBe(1);
+    expect(after.runEnd).toBeNull();
+    expect(after.activeTurn).toBe("player");
+    expect(after.enemies.some((e) => e.isCommander)).toBe(true);
+    const commander = after.enemies.find((e) => e.isCommander)!;
+    expect(commander.currentHP).toBe(balance.COMMANDER_HP);
+    expect(commander.maxHP).toBe(balance.COMMANDER_HP);
+  });
+
+  test("fire-escape transitions to rooftop with no commander", () => {
+    const before = fixtureState();
+    const after = transitionToDay2(before, "fire-escape");
+    expect(after.currentDay).toBe(2);
+    expect(after.day2MapKey).toBe("rooftop");
+    expect(after.enemies.some((e) => e.isCommander)).toBe(false);
+    expect(after.enemies.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test("HP and inventory carry forward; AP refilled", () => {
+    const base = fixtureState();
+    const before = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        currentHP: 2,
+        currentAP: 0,
+        inventory: { medkit: 2, flashbang: 1 },
+      },
+    };
+    const after = transitionToDay2(before, "stairwell");
+    expect(after.protagonist.currentHP).toBe(2);
+    expect(after.protagonist.inventory).toEqual({ medkit: 2, flashbang: 1 });
+    expect(after.protagonist.currentAP).toBe(after.protagonist.maxAP);
+  });
+
+  test("protagonist relocates to the Day-2 map's start position", () => {
+    const before = fixtureState();
+    const after = transitionToDay2(before, "stairwell");
+    expect(after.protagonist.position).toEqual(after.map.start);
+  });
+});
+
+describe("checkRunEnd (spec 0011)", () => {
+  test("Day-1 in progress with HP > 0 returns the input unchanged", () => {
+    const state = fixtureState();
+    const result = checkRunEnd(state);
+    expect(result).toBe(state);
+    expect(result.runEnd).toBeNull();
+  });
+
+  test("HP <= 0 sets runEnd to lost/killed on either day", () => {
+    const base = fixtureState();
+    const dead = {
+      ...base,
+      protagonist: { ...base.protagonist, currentHP: 0 },
+    };
+    const result = checkRunEnd(dead);
+    expect(result.runEnd).toEqual({ kind: "lost", reason: "killed" });
+  });
+
+  test("lobby with no commander alive sets runEnd to won/commander-dead", () => {
+    const day2 = transitionToDay2(fixtureState(), "stairwell");
+    // Eliminate every enemy: spec interprets 'no commander alive' as the
+    // commander being absent or at 0 HP, which both satisfy the check.
+    const cleared = {
+      ...day2,
+      enemies: day2.enemies.map((e) => ({ ...e, currentHP: 0 })),
+    };
+    const result = checkRunEnd(cleared);
+    expect(result.runEnd).toEqual({
+      kind: "won",
+      reason: "commander-dead",
+    });
+  });
+
+  test("lobby with commander alive does not win even if other enemies die", () => {
+    const day2 = transitionToDay2(fixtureState(), "stairwell");
+    const partial = {
+      ...day2,
+      enemies: day2.enemies.map((e) =>
+        e.isCommander ? e : { ...e, currentHP: 0 },
+      ),
+    };
+    const result = checkRunEnd(partial);
+    expect(result.runEnd).toBeNull();
+  });
+
+  test("rooftop wins when turn > ROOFTOP_SURVIVE_TURNS", () => {
+    const day2 = transitionToDay2(fixtureState(), "fire-escape");
+    const survived = {
+      ...day2,
+      turn: balance.ROOFTOP_SURVIVE_TURNS + 1,
+    };
+    const result = checkRunEnd(survived);
+    expect(result.runEnd).toEqual({ kind: "won", reason: "survived" });
+  });
+
+  test("rooftop does not win at turn === ROOFTOP_SURVIVE_TURNS (still that turn)", () => {
+    const day2 = transitionToDay2(fixtureState(), "fire-escape");
+    const onLastTurn = { ...day2, turn: balance.ROOFTOP_SURVIVE_TURNS };
+    const result = checkRunEnd(onLastTurn);
+    expect(result.runEnd).toBeNull();
+  });
+
+  test("is idempotent — calling on a state with runEnd set returns it unchanged", () => {
+    const lost = {
+      ...fixtureState(),
+      runEnd: { kind: "lost" as const, reason: "killed" as const },
+    };
+    const a = checkRunEnd(lost);
+    const b = checkRunEnd(a);
+    expect(a).toBe(lost);
+    expect(b).toBe(a);
   });
 });
