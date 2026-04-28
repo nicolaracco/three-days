@@ -7,12 +7,12 @@
  */
 
 import balance from "../data/balance.json";
-import { type Enemy, loadDay1Enemies, placeEnemiesOnMap } from "./enemy";
+import { type Enemy, loadDay1Enemies } from "./enemy";
 import type { TilePos } from "./grid";
 import type { Day1Map } from "./map";
 import { bfs } from "./pathfind";
 import { generateMap } from "./procgen";
-import { createRng } from "./rng";
+import { createRng, type Rng } from "./rng";
 
 export type ActiveTurn = "player" | "enemy";
 
@@ -81,8 +81,32 @@ export function createRunStateFromMap(opts: {
 export function createRunState(opts: { seed: number }): RunState {
   const rng = createRng(opts.seed);
   const map = generateMap(rng);
-  const enemies = placeEnemiesOnMap(loadDay1Enemies(), map, rng);
+  const enemies = assignSpawnSlots(loadDay1Enemies(), map, rng);
   return createRunStateFromMap({ seed: opts.seed, map, enemies });
+}
+
+/**
+ * Assign each base enemy to a chunk-authored spawn slot, picking without
+ * replacement via the same RNG that produced the map. The number of base
+ * enemies must not exceed `map.spawnSlots.length`.
+ */
+function assignSpawnSlots(
+  baseEnemies: readonly Enemy[],
+  map: Day1Map,
+  rng: Rng,
+): Enemy[] {
+  if (map.spawnSlots.length < baseEnemies.length) {
+    throw new Error(
+      `assignSpawnSlots: map has ${map.spawnSlots.length} spawn slots but ${baseEnemies.length} enemies need placement`,
+    );
+  }
+  const available = [...map.spawnSlots];
+  return baseEnemies.map((e) => {
+    const idx = rng.intInRange(0, available.length);
+    const pos = available[idx];
+    available.splice(idx, 1);
+    return { ...e, position: pos };
+  });
 }
 
 /**

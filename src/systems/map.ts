@@ -22,6 +22,13 @@ export interface Day1Map {
   start: TilePos;
   /** Indexed [row][col] to match human-readable JSON authoring order. */
   tiles: Tile[][];
+  /**
+   * Absolute positions where enemies can spawn. Procgen-produced maps
+   * carry the union of all chunk-authored spawn slots; the static fixture
+   * map (`loadDay1Map`) returns an empty array (tests that use the fixture
+   * pass `loadDay1Enemies()` with hardcoded positions instead).
+   */
+  spawnSlots: TilePos[];
 }
 
 /**
@@ -49,5 +56,6 @@ export function loadDay1Map(): Day1Map {
         }
       }),
     ),
+    spawnSlots: [],
   };
 }

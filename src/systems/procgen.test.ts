@@ -1,17 +1,77 @@
 import { test, expect, describe } from "bun:test";
-import { getChunksOfKind } from "./chunk";
+import { loadChunks } from "./chunk";
 import type { Day1Map, Tile } from "./map";
-import { generateMap, isFullyConnected } from "./procgen";
+import { generateMap, isFullyConnected, stitch } from "./procgen";
 import { createRng } from "./rng";
 
+const library = loadChunks();
+
+describe("stitch", () => {
+  test("targetCount=1 returns a single entrance chunk at origin", () => {
+    const result = stitch(createRng(1), library, 1);
+    expect(result).not.toBeNull();
+    if (result === null) throw new Error("unreachable");
+    expect(result.placed).toHaveLength(1);
+    expect(result.placed[0].chunk.kind).toBe("entrance");
+    expect(result.placed[0].offset).toEqual({ col: 0, row: 0 });
+  });
+
+  test("targetCount=2 places a second chunk via a matching connector", () => {
+    const result = stitch(createRng(1), library, 2);
+    expect(result).not.toBeNull();
+    if (result === null) throw new Error("unreachable");
+    expect(result.placed).toHaveLength(2);
+    // Second chunk must be interior.
+    expect(result.placed[1].chunk.kind).toBe("interior");
+  });
+
+  test("targetCount=3 places three connected chunks without overlap", () => {
+    let attempts = 0;
+    let found = false;
+    for (let s = 1; s <= 50 && !found; s++) {
+      const result = stitch(createRng(s), library, 3);
+      attempts++;
+      if (result === null) continue;
+      expect(result.placed).toHaveLength(3);
+      // No overlap.
+      for (let i = 0; i < result.placed.length; i++) {
+        for (let j = i + 1; j < result.placed.length; j++) {
+          const a = result.placed[i];
+          const b = result.placed[j];
+          const overlapX =
+            a.offset.col < b.offset.col + b.chunk.width &&
+            a.offset.col + a.chunk.width > b.offset.col;
+          const overlapY =
+            a.offset.row < b.offset.row + b.chunk.height &&
+            a.offset.row + a.chunk.height > b.offset.row;
+          expect(overlapX && overlapY).toBe(false);
+        }
+      }
+      found = true;
+    }
+    expect(found).toBe(true);
+    expect(attempts).toBeGreaterThan(0);
+  });
+
+  test("returns null when library has no entrance chunks", () => {
+    const interiors = library.filter((c) => c.kind === "interior");
+    const result = stitch(createRng(1), interiors, 1);
+    expect(result).toBeNull();
+  });
+
+  test("returns null when targetCount < 1", () => {
+    const result = stitch(createRng(1), library, 0);
+    expect(result).toBeNull();
+  });
+});
+
 describe("generateMap", () => {
-  test("returns a 5×10 Day1Map", () => {
-    const map = generateMap(createRng(1));
-    expect(map.width).toBe(5);
-    expect(map.height).toBe(10);
-    expect(map.tiles).toHaveLength(10);
-    for (const row of map.tiles) {
-      expect(row).toHaveLength(5);
+  test("returns a Day1Map for every seed in 1..50", () => {
+    for (let s = 1; s <= 50; s++) {
+      const map = generateMap(createRng(s));
+      expect(map.width).toBeGreaterThan(0);
+      expect(map.height).toBeGreaterThan(0);
+      expect(map.tiles).toHaveLength(map.height);
     }
   });
 
@@ -21,7 +81,7 @@ describe("generateMap", () => {
     expect(a).toEqual(b);
   });
 
-  test("different seeds can produce different maps over a sample", () => {
+  test("different seeds can produce different maps", () => {
     const seen = new Set<string>();
     for (let s = 1; s <= 50; s++) {
       seen.add(JSON.stringify(generateMap(createRng(s))));
@@ -33,49 +93,58 @@ describe("generateMap", () => {
     const map = generateMap(createRng(1));
     for (const row of map.tiles) {
       for (const tile of row) {
-        // Day1Map.Tile is "floor" | "wall" only — but we double-check at runtime
-        // that the procgen step lifted door → floor.
-        expect((tile as Tile).kind === "floor" || tile.kind === "wall").toBe(
-          true,
-        );
-        expect(tile.kind).not.toBe("door");
+        expect(tile.kind === "floor" || tile.kind === "wall").toBe(true);
       }
     }
   });
 
-  test("start matches the chosen entrance chunk's start (top-of-stitched)", () => {
-    const map = generateMap(createRng(1));
-    // The entrance chunk is stitched at the top with no offset, so its
-    // local start equals the map start.
-    const entrances = getChunksOfKind("entrance");
-    const matchingEntrance = entrances.find(
-      (e) =>
-        e.start !== null &&
-        e.start.col === map.start.col &&
-        e.start.row === map.start.row,
-    );
-    expect(matchingEntrance).toBeDefined();
-  });
-
-  test("the start tile is a floor tile in the generated map", () => {
-    for (let s = 1; s <= 10; s++) {
+  test("the start tile is always a floor tile", () => {
+    for (let s = 1; s <= 20; s++) {
       const map = generateMap(createRng(s));
-      const startTile = map.tiles[map.start.row][map.start.col];
-      expect(startTile.kind).toBe("floor");
+      expect(map.tiles[map.start.row][map.start.col].kind).toBe("floor");
     }
   });
-});
 
-describe("isFullyConnected", () => {
-  test("returns true for every generated map", () => {
+  test("every map has at least 1 spawn slot on a floor tile", () => {
+    for (let s = 1; s <= 20; s++) {
+      const map = generateMap(createRng(s));
+      expect(map.spawnSlots.length).toBeGreaterThanOrEqual(1);
+      for (const slot of map.spawnSlots) {
+        expect(map.tiles[slot.row][slot.col].kind).toBe("floor");
+      }
+    }
+  });
+
+  test("every map is fully connected from the start", () => {
     for (let s = 1; s <= 50; s++) {
       const map = generateMap(createRng(s));
       expect(isFullyConnected(map, map.start)).toBe(true);
     }
   });
 
+  test("every map produces variable dimensions across seeds", () => {
+    const dims = new Set<string>();
+    for (let s = 1; s <= 50; s++) {
+      const map = generateMap(createRng(s));
+      dims.add(`${map.width}x${map.height}`);
+    }
+    expect(dims.size).toBeGreaterThan(1);
+  });
+});
+
+describe("isFullyConnected", () => {
+  test("returns true for a hand-crafted single-floor map", () => {
+    const map: Day1Map = {
+      width: 1,
+      height: 1,
+      start: { col: 0, row: 0 },
+      tiles: [[{ kind: "floor" }]],
+      spawnSlots: [],
+    };
+    expect(isFullyConnected(map, map.start)).toBe(true);
+  });
+
   test("returns false for a hand-crafted disconnected map", () => {
-    // 3×3 with two floor tiles separated by a wall row.
     const tiles: Tile[][] = [
       [{ kind: "floor" }, { kind: "wall" }, { kind: "floor" }],
       [{ kind: "wall" }, { kind: "wall" }, { kind: "wall" }],
@@ -86,16 +155,22 @@ describe("isFullyConnected", () => {
       height: 3,
       start: { col: 0, row: 0 },
       tiles,
+      spawnSlots: [],
     };
     expect(isFullyConnected(map, map.start)).toBe(false);
   });
 
-  test("returns true for a hand-crafted single-floor map", () => {
+  test("returns true for a fully-connected hand-crafted map", () => {
+    const tiles: Tile[][] = [
+      [{ kind: "floor" }, { kind: "floor" }],
+      [{ kind: "floor" }, { kind: "floor" }],
+    ];
     const map: Day1Map = {
-      width: 1,
-      height: 1,
+      width: 2,
+      height: 2,
       start: { col: 0, row: 0 },
-      tiles: [[{ kind: "floor" }]],
+      tiles,
+      spawnSlots: [],
     };
     expect(isFullyConnected(map, map.start)).toBe(true);
   });

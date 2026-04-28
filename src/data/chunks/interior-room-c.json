@@ -1,13 +1,18 @@
 {
-  "id": "back-room-a",
-  "kind": "back",
+  "id": "interior-room-c",
+  "kind": "interior",
   "width": 5,
   "height": 5,
   "start": null,
+  "spawnSlots": [{ "col": 2, "row": 2 }],
+  "connectors": [
+    { "side": "n", "col": 2, "row": 0 },
+    { "side": "w", "col": 0, "row": 2 }
+  ],
   "tiles": [
     ["wall", "wall", "door", "wall", "wall"],
     ["wall", "floor", "floor", "floor", "wall"],
-    ["wall", "floor", "floor", "floor", "wall"],
+    ["door", "floor", "floor", "floor", "wall"],
     ["wall", "floor", "floor", "floor", "wall"],
     ["wall", "wall", "wall", "wall", "wall"]
   ]

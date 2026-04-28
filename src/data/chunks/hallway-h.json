@@ -1,0 +1,17 @@
+{
+  "id": "hallway-h",
+  "kind": "interior",
+  "width": 7,
+  "height": 3,
+  "start": null,
+  "spawnSlots": [{ "col": 3, "row": 1 }],
+  "connectors": [
+    { "side": "w", "col": 0, "row": 1 },
+    { "side": "e", "col": 6, "row": 1 }
+  ],
+  "tiles": [
+    ["wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+    ["door", "floor", "floor", "floor", "floor", "floor", "door"],
+    ["wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+  ]
+}

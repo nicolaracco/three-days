@@ -6,17 +6,24 @@
  * mark connection slots); the stitcher turns those into `floor` in the
  * stitched output. Walls are walls; floors are walkable.
  *
- * Spec 0005 ships four 5×5 chunks (2 entrance variants, 2 back variants).
- * Spec 0006 grows this to the GDD §8.2 catalog and supports variable
- * chunk dimensions.
+ * Spec 0007 adds two metadata fields to each chunk:
+ * - `connectors`: where on the chunk's edges other chunks can attach
+ *   (used by the connector-based stitcher).
+ * - `spawnSlots`: chunk-local positions where an enemy can spawn
+ *   (replaces the spec-0006 runtime `placeEnemiesOnMap`).
+ *
+ * `kind` is `"entrance" | "interior"` — entrance chunks have a `start`
+ * position (the protagonist spawns there); interior chunks don't.
  */
 
+import alcoveSE from "../data/chunks/alcove-se.json";
 import entranceA from "../data/chunks/entrance-room-a.json";
 import entranceB from "../data/chunks/entrance-room-b.json";
 import entranceC from "../data/chunks/entrance-room-c.json";
-import backA from "../data/chunks/back-room-a.json";
-import backB from "../data/chunks/back-room-b.json";
-import backC from "../data/chunks/back-room-c.json";
+import hallwayH from "../data/chunks/hallway-h.json";
+import interiorA from "../data/chunks/interior-room-a.json";
+import interiorB from "../data/chunks/interior-room-b.json";
+import interiorC from "../data/chunks/interior-room-c.json";
 import type { TilePos } from "./grid";
 import type { FloorTile, WallTile } from "./map";
 
@@ -31,24 +38,47 @@ export interface DoorTile {
  */
 export type ChunkTile = FloorTile | WallTile | DoorTile;
 
-export type ChunkKind = "entrance" | "back";
+export type ChunkKind = "entrance" | "interior";
+
+export type ConnectorSide = "n" | "s" | "e" | "w";
+
+export interface Connector {
+  side: ConnectorSide;
+  /** Chunk-local column where the door tile lives. */
+  col: number;
+  /** Chunk-local row where the door tile lives. */
+  row: number;
+}
 
 export interface Chunk {
   id: string;
   kind: ChunkKind;
   width: number;
   height: number;
-  /** Spawn position inside the chunk (entrance only). `null` for back chunks. */
+  /** Spawn position inside the chunk (entrance only). `null` for interior chunks. */
   start: TilePos | null;
+  /** Chunk-local positions where enemies can spawn. */
+  spawnSlots: TilePos[];
+  /** Edges where this chunk can connect to other chunks. */
+  connectors: Connector[];
   /** Indexed [row][col] to match human-readable JSON authoring order. */
   tiles: ChunkTile[][];
 }
 
-const RAW_CHUNKS = [entranceA, entranceB, entranceC, backA, backB, backC];
+const RAW_CHUNKS = [
+  entranceA,
+  entranceB,
+  entranceC,
+  interiorA,
+  interiorB,
+  interiorC,
+  hallwayH,
+  alcoveSE,
+];
 
 let cached: Chunk[] | null = null;
 
-/** Lift the four hand-authored chunk JSONs into typed `Chunk` instances. */
+/** Lift the hand-authored chunk JSONs into typed `Chunk` instances. */
 export function loadChunks(): Chunk[] {
   if (cached !== null) return cached;
   cached = RAW_CHUNKS.map((raw) => liftChunk(raw));
@@ -60,17 +90,39 @@ export function getChunksOfKind(kind: ChunkKind): Chunk[] {
   return loadChunks().filter((c) => c.kind === kind);
 }
 
+/** Returns the side that an opposite connector must have to connect. */
+export function oppositeSide(s: ConnectorSide): ConnectorSide {
+  switch (s) {
+    case "n":
+      return "s";
+    case "s":
+      return "n";
+    case "e":
+      return "w";
+    case "w":
+      return "e";
+  }
+}
+
+interface RawConnector {
+  side: string;
+  col: number;
+  row: number;
+}
+
 interface RawChunk {
   id: string;
   kind: string;
   width: number;
   height: number;
   start: TilePos | null;
+  spawnSlots: TilePos[];
+  connectors: RawConnector[];
   tiles: string[][];
 }
 
 function liftChunk(raw: RawChunk): Chunk {
-  if (raw.kind !== "entrance" && raw.kind !== "back") {
+  if (raw.kind !== "entrance" && raw.kind !== "interior") {
     throw new Error(`Unknown chunk kind in ${raw.id}: ${raw.kind}`);
   }
   if (raw.tiles.length !== raw.height) {
@@ -85,12 +137,21 @@ function liftChunk(raw: RawChunk): Chunk {
       );
     }
   }
+  for (const c of raw.connectors) {
+    if (c.side !== "n" && c.side !== "s" && c.side !== "e" && c.side !== "w") {
+      throw new Error(
+        `Chunk ${raw.id}: connector has invalid side '${c.side}'`,
+      );
+    }
+  }
   return {
     id: raw.id,
     kind: raw.kind,
     width: raw.width,
     height: raw.height,
     start: raw.start,
+    spawnSlots: raw.spawnSlots,
+    connectors: raw.connectors as Connector[],
     tiles: raw.tiles.map((row) => row.map((s) => liftTile(s, raw.id))),
   };
 }

@@ -2,15 +2,17 @@ import { test, expect, describe } from "bun:test";
 import {
   type Chunk,
   type ChunkTile,
+  type Connector,
   getChunksOfKind,
   loadChunks,
+  oppositeSide,
 } from "./chunk";
 
 describe("loadChunks", () => {
   const chunks = loadChunks();
 
-  test("returns 6 chunks (3 entrance + 3 back)", () => {
-    expect(chunks).toHaveLength(6);
+  test("returns 8 chunks (3 entrance + 5 interior)", () => {
+    expect(chunks).toHaveLength(8);
   });
 
   test("each chunk has matching width/height and tiles dimensions", () => {
@@ -32,7 +34,7 @@ describe("loadChunks", () => {
     }
   });
 
-  test("entrance chunks have a non-null start; back chunks do not", () => {
+  test("entrance chunks have a non-null start; interior chunks do not", () => {
     for (const c of chunks) {
       if (c.kind === "entrance") {
         expect(c.start).not.toBeNull();
@@ -42,29 +44,54 @@ describe("loadChunks", () => {
     }
   });
 
-  test("entrance chunks have at least one south-edge door (row = height - 1)", () => {
-    const entrances = chunks.filter((c) => c.kind === "entrance");
-    for (const c of entrances) {
-      const lastRow = c.tiles[c.height - 1];
-      const doorCount = lastRow.filter((t) => t.kind === "door").length;
-      expect(doorCount).toBeGreaterThanOrEqual(1);
+  test("every chunk has at least one connector", () => {
+    for (const c of chunks) {
+      expect(c.connectors.length).toBeGreaterThan(0);
     }
   });
 
-  test("back chunks have at least one north-edge door (row = 0)", () => {
-    const backs = chunks.filter((c) => c.kind === "back");
-    for (const c of backs) {
-      const firstRow = c.tiles[0];
-      const doorCount = firstRow.filter((t) => t.kind === "door").length;
-      expect(doorCount).toBeGreaterThanOrEqual(1);
+  test("each connector position holds a door tile in the chunk grid", () => {
+    for (const c of chunks) {
+      for (const conn of c.connectors) {
+        const tile = c.tiles[conn.row][conn.col];
+        expect(tile.kind).toBe("door");
+      }
+    }
+  });
+
+  test("interior chunks have at least one spawn slot; entrance chunks have none", () => {
+    for (const c of chunks) {
+      if (c.kind === "entrance") {
+        expect(c.spawnSlots).toHaveLength(0);
+      } else {
+        expect(c.spawnSlots.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  test("each spawn slot is on a floor tile", () => {
+    for (const c of chunks) {
+      for (const slot of c.spawnSlots) {
+        const tile = c.tiles[slot.row][slot.col];
+        expect(tile.kind).toBe("floor");
+      }
     }
   });
 });
 
 describe("getChunksOfKind", () => {
-  test("returns 3 entrance chunks and 3 back chunks", () => {
+  test("returns 3 entrance chunks and 5 interior chunks", () => {
     expect(getChunksOfKind("entrance")).toHaveLength(3);
-    expect(getChunksOfKind("back")).toHaveLength(3);
+    expect(getChunksOfKind("interior")).toHaveLength(5);
+  });
+});
+
+describe("oppositeSide", () => {
+  test("pairs n↔s and e↔w", () => {
+    expect(oppositeSide("n")).toBe("s");
+    expect(oppositeSide("s")).toBe("n");
+    expect(oppositeSide("e")).toBe("w");
+    expect(oppositeSide("w")).toBe("e");
   });
 });
 
@@ -80,15 +107,19 @@ describe("ChunkTile union", () => {
 });
 
 describe("Chunk type", () => {
-  test("admits a typed entrance literal", () => {
+  test("admits a typed entrance literal with all required fields", () => {
+    const conn: Connector = { side: "s", col: 0, row: 0 };
     const c: Chunk = {
       id: "test",
       kind: "entrance",
       width: 1,
       height: 1,
       start: { col: 0, row: 0 },
-      tiles: [[{ kind: "floor" }]],
+      spawnSlots: [],
+      connectors: [conn],
+      tiles: [[{ kind: "door" }]],
     };
     expect(c.id).toBe("test");
+    expect(c.connectors[0].side).toBe("s");
   });
 });

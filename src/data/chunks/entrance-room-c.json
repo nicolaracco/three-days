@@ -3,11 +3,16 @@
   "kind": "entrance",
   "width": 5,
   "height": 5,
-  "start": { "col": 1, "row": 1 },
+  "start": { "col": 2, "row": 1 },
+  "spawnSlots": [],
+  "connectors": [
+    { "side": "s", "col": 2, "row": 4 },
+    { "side": "e", "col": 4, "row": 2 }
+  ],
   "tiles": [
     ["wall", "wall", "wall", "wall", "wall"],
     ["wall", "floor", "floor", "floor", "wall"],
-    ["wall", "floor", "wall", "wall", "wall"],
+    ["wall", "floor", "floor", "floor", "door"],
     ["wall", "floor", "floor", "floor", "wall"],
     ["wall", "wall", "door", "wall", "wall"]
   ]

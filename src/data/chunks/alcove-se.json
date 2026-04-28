@@ -1,13 +1,13 @@
 {
-  "id": "entrance-room-a",
-  "kind": "entrance",
+  "id": "alcove-se",
+  "kind": "interior",
   "width": 5,
   "height": 5,
-  "start": { "col": 2, "row": 1 },
-  "spawnSlots": [],
+  "start": null,
+  "spawnSlots": [{ "col": 2, "row": 2 }],
   "connectors": [
-    { "side": "s", "col": 2, "row": 4 },
-    { "side": "e", "col": 4, "row": 2 }
+    { "side": "e", "col": 4, "row": 2 },
+    { "side": "s", "col": 2, "row": 4 }
   ],
   "tiles": [
     ["wall", "wall", "wall", "wall", "wall"],
