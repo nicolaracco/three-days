@@ -134,10 +134,10 @@
       "weaponId": "improvised-melee"
     },
     {
-      "id": "lobby-melee-2",
-      "kind": "melee",
+      "id": "lobby-ranged-1",
+      "kind": "ranged",
       "position": { "col": 4, "row": 5 },
-      "weaponId": "improvised-melee"
+      "weaponId": "alien-pistol"
     },
     {
       "id": "commander",

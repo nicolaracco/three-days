@@ -5,5 +5,12 @@
     "damage": 1,
     "range": 1,
     "apCost": 2
+  },
+  {
+    "id": "alien-pistol",
+    "name": "Alien pistol",
+    "damage": 1,
+    "range": 99,
+    "apCost": 2
   }
 ]

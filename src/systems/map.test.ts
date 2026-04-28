@@ -107,4 +107,22 @@ describe("loadDay2Map (spec 0011)", () => {
       }
     }
   });
+
+  test("lobby has at least one ranged enemy (spec 0012)", () => {
+    const { enemies } = loadDay2Map("lobby");
+    const ranged = enemies.filter((e) => e.kind === "ranged");
+    expect(ranged.length).toBeGreaterThanOrEqual(1);
+    for (const r of ranged) {
+      expect(r.weaponId).toBe("alien-pistol");
+    }
+  });
+
+  test("rooftop has at least two ranged enemies (spec 0012, GDD §9.2)", () => {
+    const { enemies } = loadDay2Map("rooftop");
+    const ranged = enemies.filter((e) => e.kind === "ranged");
+    expect(ranged.length).toBeGreaterThanOrEqual(2);
+    for (const r of ranged) {
+      expect(r.weaponId).toBe("alien-pistol");
+    }
+  });
 });

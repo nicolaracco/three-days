@@ -134,16 +134,16 @@
       "weaponId": "improvised-melee"
     },
     {
-      "id": "rooftop-melee-2",
-      "kind": "melee",
+      "id": "rooftop-ranged-1",
+      "kind": "ranged",
       "position": { "col": 1, "row": 4 },
-      "weaponId": "improvised-melee"
+      "weaponId": "alien-pistol"
     },
     {
-      "id": "rooftop-melee-3",
-      "kind": "melee",
+      "id": "rooftop-ranged-2",
+      "kind": "ranged",
       "position": { "col": 8, "row": 6 },
-      "weaponId": "improvised-melee"
+      "weaponId": "alien-pistol"
     },
     {
       "id": "rooftop-melee-4",

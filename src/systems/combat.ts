@@ -6,9 +6,15 @@
  * the target loses `weapon.damage` HP; on a killing blow the target is
  * removed from `state.enemies` (or, for the protagonist, simply has
  * HP ≤ 0 and the scene shows the death overlay).
+ *
+ * Spec 0012 adds an LoS gate for any weapon with `range > 1`. Adjacent
+ * (range 1) attacks skip the check — melee through walls is impossible
+ * by adjacency anyway, and the LoS algorithm has nothing in-between to
+ * inspect.
  */
 
 import type { TilePos } from "./grid";
+import { hasLoS } from "./los";
 import type { RunState } from "./run-state";
 import { getWeapon } from "./weapon";
 
@@ -23,7 +29,12 @@ export interface AttackParams {
 
 type AttackFailure = {
   ok: false;
-  reason: "out-of-range" | "insufficient-ap" | "no-weapon" | "no-target";
+  reason:
+    | "out-of-range"
+    | "insufficient-ap"
+    | "no-weapon"
+    | "no-target"
+    | "no-line-of-sight";
 };
 
 export type AttackResult = { ok: true; damage: number } | AttackFailure;
@@ -80,6 +91,15 @@ export function attackResult(
     Math.abs(attacker.position.row - target.position.row);
   if (dist === 0 || dist > weapon.range) {
     return { ok: false, reason: "out-of-range" };
+  }
+
+  // Spec 0012: ranged weapons (range > 1) need an unobstructed line.
+  // Adjacent melee skips the check — adjacency is the only constraint.
+  if (
+    weapon.range > 1 &&
+    !hasLoS(attacker.position, target.position, state.map)
+  ) {
+    return { ok: false, reason: "no-line-of-sight" };
   }
 
   return { ok: true, damage: weapon.damage };

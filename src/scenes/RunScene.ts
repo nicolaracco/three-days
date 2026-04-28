@@ -176,7 +176,13 @@ export class RunScene extends Phaser.Scene {
   private itemsLayer!: Phaser.GameObjects.Container;
   private protagonistSprite!: Phaser.GameObjects.Arc;
   private protagonistHpBar!: HpBar;
-  private enemySprites: Map<string, Phaser.GameObjects.Arc> = new Map();
+  /**
+   * Spec 0012: ranged enemies render as rectangles, melees stay as
+   * arcs (circles). The map's value type widens to the common Shape
+   * base so both fit. `setPosition`, `setFillStyle`, and `setSize`
+   * all live on `Shape`, so existing refresh code is unaffected.
+   */
+  private enemySprites: Map<string, Phaser.GameObjects.Shape> = new Map();
   private enemyHpBars: Map<string, HpBar> = new Map();
 
   private turnIndicatorText!: Phaser.GameObjects.Text;
@@ -346,12 +352,23 @@ export class RunScene extends Phaser.Scene {
   private renderEnemies(): void {
     for (const enemy of this.state.enemies) {
       const px = tileToPixel(enemy.position, this.gridCfg);
-      const sprite = this.add.circle(
-        px.x + TILE_SIZE / 2,
-        px.y + TILE_SIZE / 2,
-        TILE_SIZE / 2 - 6,
-        COLOR.enemyMelee,
-      );
+      // Spec 0012: melees as circles, ranged as squares (the kind glyph
+      // per ADR-0008's always-visible rule). Same red fill — the shape
+      // *is* the glyph.
+      const cx = px.x + TILE_SIZE / 2;
+      const cy = px.y + TILE_SIZE / 2;
+      const sprite =
+        enemy.kind === "ranged"
+          ? this.add
+              .rectangle(
+                cx,
+                cy,
+                TILE_SIZE - 12,
+                TILE_SIZE - 12,
+                COLOR.enemyMelee,
+              )
+              .setOrigin(0.5, 0.5)
+          : this.add.circle(cx, cy, TILE_SIZE / 2 - 6, COLOR.enemyMelee);
       this.enemySprites.set(enemy.id, sprite);
       const bar = this.makeHpBar(px, COLOR.hpBarFgEnemy);
       this.enemyHpBars.set(enemy.id, bar);
@@ -1479,7 +1496,10 @@ export class RunScene extends Phaser.Scene {
     });
   }
 
-  private flashSprite(sprite: Phaser.GameObjects.Arc, baseColor: number): void {
+  private flashSprite(
+    sprite: Phaser.GameObjects.Shape,
+    baseColor: number,
+  ): void {
     sprite.setFillStyle(COLOR.flash);
     this.time.delayedCall(FLASH_MS, () => {
       // Defensive: sprite may have been destroyed if the unit died.
@@ -1552,6 +1572,12 @@ export class RunScene extends Phaser.Scene {
     } else {
       // attacked
       this.flashSprite(this.protagonistSprite, COLOR.protagonist);
+      // Spec 0012: ranged attackers draw a brief shot-line from
+      // shooter to player so it's clear which enemy fired.
+      const attacker = this.state.enemies.find((e) => e.id === enemyId);
+      if (attacker && attacker.kind === "ranged") {
+        this.drawShotAnimation(attacker.position);
+      }
       this.refreshHpBars();
       this.refreshHUD();
       if (this.selection.kind === "protagonist") this.refreshPanel();
@@ -1563,6 +1589,29 @@ export class RunScene extends Phaser.Scene {
         this.tryEnemyAct(enemyId, enemyIndex);
       });
     }
+  }
+
+  /**
+   * Spec 0012: world-space line from `from` (a tile) to the
+   * protagonist's tile center, fading alpha 1 → 0 over `FLASH_MS`,
+   * then destroyed. Drawn in world coordinates so it scrolls with
+   * the camera per ADR-0011.
+   */
+  private drawShotAnimation(from: TilePos): void {
+    const a = tileToPixel(from, this.gridCfg);
+    const b = tileToPixel(this.state.protagonist.position, this.gridCfg);
+    const ax = a.x + TILE_SIZE / 2;
+    const ay = a.y + TILE_SIZE / 2;
+    const bx = b.x + TILE_SIZE / 2;
+    const by = b.y + TILE_SIZE / 2;
+    const line = this.add.line(0, 0, ax, ay, bx, by, COLOR.enemyMelee);
+    line.setOrigin(0, 0).setLineWidth(2);
+    this.tweens.add({
+      targets: line,
+      alpha: { from: 1, to: 0 },
+      duration: FLASH_MS,
+      onComplete: () => line.destroy(),
+    });
   }
 
   private finishEnemyTurn(): void {

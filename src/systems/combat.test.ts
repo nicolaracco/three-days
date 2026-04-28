@@ -183,3 +183,74 @@ describe("commitAttack", () => {
     expect(result.state.protagonist.currentHP).toBeLessThanOrEqual(0);
   });
 });
+
+describe("ranged attacks (spec 0012)", () => {
+  /**
+   * Spec 0012: any weapon with `range > 1` requires LoS. Adjacent (range
+   * 1) attacks skip the check, so existing melee tests stay unaffected.
+   */
+  function rangedFixture(): RunState {
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+    });
+    // Position the protagonist far from the enemy and arm the enemy
+    // with the alien-pistol so ranged behavior is exercised.
+    return {
+      ...base,
+      protagonist: { ...base.protagonist, position: { col: 0, row: 0 } },
+      enemies: base.enemies.map((e) =>
+        e.id === "alien-1"
+          ? { ...e, position: { col: 5, row: 0 }, weaponId: "alien-pistol" }
+          : e,
+      ),
+    };
+  }
+
+  test("ranged attack succeeds over a clear line", () => {
+    const state = advanceTurn(rangedFixture()); // enemy turn → enemy AP filled
+    const result = attackResult(state, {
+      attackerSide: "enemy",
+      attackerId: "alien-1",
+      weaponId: "alien-pistol",
+      targetId: "protagonist",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  test("ranged attack rejects with 'no-line-of-sight' when a wall blocks", () => {
+    const base = advanceTurn(rangedFixture());
+    // Drop a wall between protagonist (0,0) and alien (5,0) on the line.
+    const tiles = base.map.tiles.map((row) => row.slice());
+    tiles[0][3] = { kind: "wall" };
+    const state: RunState = { ...base, map: { ...base.map, tiles } };
+    const result = attackResult(state, {
+      attackerSide: "enemy",
+      attackerId: "alien-1",
+      weaponId: "alien-pistol",
+      targetId: "protagonist",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.reason).toBe("no-line-of-sight");
+  });
+
+  test("melee adjacent attack still succeeds even with a wall 'between' (range 1 skips LoS)", () => {
+    // Place protagonist adjacent to the melee enemy; drop a wall on the
+    // tile between them on a different axis to confirm the check isn't
+    // tripping. With dist === 1 there's no in-between tile anyway.
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+    });
+    const state = withPlayerAdjacent(base);
+    const result = attackResult(state, {
+      attackerSide: "player",
+      weaponId: "improvised-melee",
+      targetId: "alien-1",
+    });
+    expect(result.ok).toBe(true);
+  });
+});

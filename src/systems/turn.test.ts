@@ -192,3 +192,85 @@ describe("enemyAct", () => {
     expect(result.kind).toBe("idle");
   });
 });
+
+describe("enemyAct ranged behavior (spec 0012)", () => {
+  /**
+   * Build a state with a single ranged enemy carrying the alien-pistol,
+   * ready to act. The static 11×15 all-floor map gives clear LoS in
+   * every direction.
+   */
+  function rangedFixture(): RunState {
+    const base = onEnemyTurn();
+    return {
+      ...base,
+      enemies: base.enemies.map((e) =>
+        e.id === "alien-1"
+          ? {
+              ...e,
+              kind: "ranged",
+              weaponId: "alien-pistol",
+              position: { col: 5, row: 11 },
+            }
+          : e,
+      ),
+    };
+  }
+
+  test("attacks when LoS is clear and AP is sufficient", () => {
+    const state = withProtagonistRelativeToEnemy(rangedFixture(), 0, -5);
+    const result = enemyAct(state, state.enemies[0].id);
+    expect(result.kind).toBe("attacked");
+    if (result.kind !== "attacked") throw new Error("unreachable");
+    expect(result.attackerId).toBe("alien-1");
+  });
+
+  test("with no LoS but a reachable LoS tile, the enemy moves toward it", () => {
+    // Place a wall directly between enemy and player. Enemy must move
+    // to a tile that has LoS around the wall to fire next turn.
+    const base = withProtagonistRelativeToEnemy(rangedFixture(), 0, -5);
+    const tiles = base.map.tiles.map((row) => row.slice());
+    // The enemy is at (5,11); player at (5,6). Block (5,8) and (5,9)
+    // and (5,10) so the direct line is blocked. Going around (col 4 or 6)
+    // restores LoS.
+    tiles[8][5] = { kind: "wall" };
+    tiles[9][5] = { kind: "wall" };
+    tiles[10][5] = { kind: "wall" };
+    const state: RunState = {
+      ...base,
+      map: { ...base.map, tiles },
+    };
+    const result = enemyAct(state, "alien-1");
+    expect(result.kind).toBe("moved");
+    if (result.kind !== "moved") throw new Error("unreachable");
+    // Moved to a side tile (col 4 or col 6, still row 11).
+    expect(result.to.row).toBe(11);
+    expect([4, 6]).toContain(result.to.col);
+  });
+
+  test("falls back to step-toward-player when no LoS tile is reachable", () => {
+    // Box the ranged enemy in with walls so there's no path to any
+    // LoS tile; the only walkable neighbor is one tile that does NOT
+    // have LoS to the player but is closer along the BFS path.
+    const base = withProtagonistRelativeToEnemy(rangedFixture(), 0, -2);
+    // Put the enemy in a tight nook surrounded by walls except north.
+    const tiles = base.map.tiles.map((row) => row.slice());
+    tiles[11][4] = { kind: "wall" }; // west blocked
+    tiles[11][6] = { kind: "wall" }; // east blocked
+    if (tiles[12]) tiles[12][5] = { kind: "wall" }; // south blocked (if row exists)
+    // Drop a wall row between enemy and player so initial LoS is blocked.
+    tiles[10][5] = { kind: "wall" };
+    const state: RunState = {
+      ...base,
+      enemies: base.enemies.map((e) =>
+        e.id === "alien-1" ? { ...e, position: { col: 5, row: 11 } } : e,
+      ),
+      protagonist: { ...base.protagonist, position: { col: 5, row: 9 } },
+      map: { ...base.map, tiles },
+    };
+    const result = enemyAct(state, "alien-1");
+    // Either moved (toward player via the only open neighbor) or idle if
+    // even that is blocked. Both are acceptable fall-backs; we just
+    // assert it's NOT a hard error and not "attacked" (LoS is blocked).
+    expect(["moved", "idle"]).toContain(result.kind);
+  });
+});

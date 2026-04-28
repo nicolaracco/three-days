@@ -12,6 +12,7 @@
 
 import { commitAttack } from "./combat";
 import type { TilePos } from "./grid";
+import { hasLoS } from "./los";
 import { bfs } from "./pathfind";
 import type { RunState } from "./run-state";
 
@@ -81,6 +82,95 @@ export function enemyStep(state: RunState, enemyId: string): EnemyStepResult {
 }
 
 /**
+ * Spec 0012: step a ranged enemy one tile toward the *nearest reachable
+ * walkable tile that has LoS to the protagonist*. Falls back to
+ * `moved: false` when no LoS-bearing tile is reachable — the caller
+ * (`enemyAct`) then drops to `enemyStep` so the alien still closes.
+ *
+ * The BFS expands from the enemy's tile, checking each newly-visited
+ * tile for LoS to the player; the first hit (BFS = shortest path)
+ * wins. `cameFrom` is then walked backward to find the first step.
+ */
+function enemyStepTowardLoS(state: RunState, enemyId: string): EnemyStepResult {
+  const enemy = state.enemies.find((e) => e.id === enemyId);
+  if (!enemy) return { state, moved: false };
+  if (enemy.currentAP <= 0) return { state, moved: false };
+
+  const blocked = tilesOfOtherEnemies(state, enemyId);
+  const player = state.protagonist.position;
+  const map = state.map;
+  const width = map.width;
+  const height = map.height;
+  const startKey = `${enemy.position.col},${enemy.position.row}`;
+  const visited = new Set<string>([startKey]);
+  const cameFrom = new Map<string, TilePos>();
+  const queue: TilePos[] = [enemy.position];
+  let target: TilePos | null = null;
+
+  while (queue.length > 0) {
+    const cur = queue.shift() as TilePos;
+    if (!(cur.col === enemy.position.col && cur.row === enemy.position.row)) {
+      if (hasLoS(cur, player, map)) {
+        target = cur;
+        break;
+      }
+    }
+    for (const [dc, dr] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const next: TilePos = { col: cur.col + dc, row: cur.row + dr };
+      if (
+        next.col < 0 ||
+        next.col >= width ||
+        next.row < 0 ||
+        next.row >= height
+      )
+        continue;
+      const k = `${next.col},${next.row}`;
+      if (visited.has(k)) continue;
+      const tile = map.tiles[next.row][next.col];
+      if (tile.kind !== "floor" && tile.kind !== "exit") continue;
+      if (next.col === player.col && next.row === player.row) continue;
+      if (blocked.some((b) => b.col === next.col && b.row === next.row))
+        continue;
+      visited.add(k);
+      cameFrom.set(k, cur);
+      queue.push(next);
+    }
+  }
+
+  if (!target) return { state, moved: false };
+
+  // Walk cameFrom from `target` back to the enemy; the tile whose parent
+  // is the enemy is the first step.
+  let cursor: TilePos = target;
+  let prev: TilePos = target;
+  while (
+    !(cursor.col === enemy.position.col && cursor.row === enemy.position.row)
+  ) {
+    prev = cursor;
+    const parent = cameFrom.get(`${cursor.col},${cursor.row}`);
+    if (!parent) return { state, moved: false };
+    cursor = parent;
+  }
+
+  return {
+    state: {
+      ...state,
+      enemies: state.enemies.map((e) =>
+        e.id === enemyId
+          ? { ...e, position: prev, currentAP: e.currentAP - 1 }
+          : e,
+      ),
+    },
+    moved: true,
+  };
+}
+
+/**
  * Decide and apply one enemy action: attack if adjacent + AP-sufficient,
  * else move one tile, else idle.
  *
@@ -110,8 +200,17 @@ export function enemyAct(state: RunState, enemyId: string): EnemyActResult {
     };
   }
 
-  // Else try a move step.
-  const stepResult = enemyStep(state, enemyId);
+  // Else try a move step. Spec 0012: ranged enemies prefer to move
+  // toward the nearest LoS tile so they can shoot next turn; if no
+  // LoS tile is reachable (boxed in), fall back to "step toward
+  // player" so they still close. Melees use the existing chase.
+  let stepResult = { state, moved: false };
+  if (enemy.kind === "ranged") {
+    stepResult = enemyStepTowardLoS(state, enemyId);
+  }
+  if (!stepResult.moved) {
+    stepResult = enemyStep(state, enemyId);
+  }
   if (stepResult.moved) {
     const moved = stepResult.state.enemies.find((e) => e.id === enemyId);
     return {
