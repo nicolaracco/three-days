@@ -152,13 +152,20 @@ export class RunScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(COLOR.sceneBg);
     this.state = createRunState({ seed: Date.now() });
 
-    // Center the (possibly smaller) procgen map within the map-area band.
-    // For an 11×15 map this collapses to the spec-0002 offsets exactly;
-    // for a 5×10 procgen map the empty space is split evenly on each side.
+    // Map placement is per-axis: center within the viewport / map-area band
+    // when the map is smaller, otherwise pin at the top-left of the band so
+    // the camera can scroll across the rest. Camera bounds (set after the
+    // protagonist sprite exists) match the chosen placement so scroll only
+    // happens on axes that actually need it.
     const mapPxW = this.state.map.width * TILE_SIZE;
     const mapPxH = this.state.map.height * TILE_SIZE;
-    const offsetX = Math.floor((viewport.WORKING_WIDTH - mapPxW) / 2);
-    const offsetY = MAP_AREA_TOP + Math.floor((MAP_AREA_HEIGHT - mapPxH) / 2);
+    const fitsX = mapPxW <= viewport.WORKING_WIDTH;
+    const fitsY = mapPxH <= MAP_AREA_HEIGHT;
+    const offsetX = fitsX
+      ? Math.floor((viewport.WORKING_WIDTH - mapPxW) / 2)
+      : 0;
+    const offsetY =
+      MAP_AREA_TOP + (fitsY ? Math.floor((MAP_AREA_HEIGHT - mapPxH) / 2) : 0);
     this.gridCfg = {
       offset: { x: offsetX, y: offsetY },
       tileSize: TILE_SIZE,
@@ -173,6 +180,18 @@ export class RunScene extends Phaser.Scene {
     this.renderPanel();
     this.renderOrientationOverlay();
     this.renderDeathOverlay();
+
+    // Configure camera scroll. Bounds are exactly the viewport when the map
+    // fits, so scroll is clamped to (0, 0); otherwise extended by the map's
+    // overflow on the relevant axis. `startFollow` centers the protagonist
+    // and Phaser clamps to bounds at the edges, so HUD and panel always
+    // remain visible at the top/bottom of the screen.
+    const boundsW = fitsX ? viewport.WORKING_WIDTH : mapPxW;
+    const boundsH = fitsY
+      ? viewport.WORKING_HEIGHT
+      : MAP_AREA_TOP + mapPxH + PANEL_HEIGHT;
+    this.cameras.main.setBounds(0, 0, boundsW, boundsH);
+    this.cameras.main.startFollow(this.protagonistSprite, true);
 
     this.input.on("pointerdown", this.handlePointerDown, this);
 
@@ -238,30 +257,41 @@ export class RunScene extends Phaser.Scene {
   }
 
   private renderHUD(): void {
+    // HUD lives in screen space (scrollFactor 0), so it stays at the top of
+    // the viewport even when the camera scrolls a larger map.
     this.add
       .rectangle(0, 0, viewport.WORKING_WIDTH, HUD_HEIGHT, COLOR.hudBg)
-      .setOrigin(0, 0);
+      .setOrigin(0, 0)
+      .setScrollFactor(0);
 
-    this.turnIndicatorText = this.add.text(8, 4, "", {
-      fontFamily: "monospace",
-      fontSize: "13px",
-      color: COLOR.text,
-    });
-    this.hpText = this.add.text(8, 22, "", {
-      fontFamily: "monospace",
-      fontSize: "13px",
-      color: COLOR.text,
-    });
-    this.turnText = this.add.text(120, 4, "", {
-      fontFamily: "monospace",
-      fontSize: "13px",
-      color: COLOR.text,
-    });
-    this.apText = this.add.text(120, 22, "", {
-      fontFamily: "monospace",
-      fontSize: "13px",
-      color: COLOR.text,
-    });
+    this.turnIndicatorText = this.add
+      .text(8, 4, "", {
+        fontFamily: "monospace",
+        fontSize: "13px",
+        color: COLOR.text,
+      })
+      .setScrollFactor(0);
+    this.hpText = this.add
+      .text(8, 22, "", {
+        fontFamily: "monospace",
+        fontSize: "13px",
+        color: COLOR.text,
+      })
+      .setScrollFactor(0);
+    this.turnText = this.add
+      .text(120, 4, "", {
+        fontFamily: "monospace",
+        fontSize: "13px",
+        color: COLOR.text,
+      })
+      .setScrollFactor(0);
+    this.apText = this.add
+      .text(120, 22, "", {
+        fontFamily: "monospace",
+        fontSize: "13px",
+        color: COLOR.text,
+      })
+      .setScrollFactor(0);
 
     // End Turn button — keep its own hit area ≥ 44×44 (visual is smaller)
     const btnW = 88;
@@ -271,6 +301,7 @@ export class RunScene extends Phaser.Scene {
     this.endTurnRect = this.add
       .rectangle(btnX, btnY, btnW, btnH, COLOR.buttonBg)
       .setOrigin(0, 0)
+      .setScrollFactor(0)
       .setInteractive(
         new Phaser.Geom.Rectangle(
           -((44 - btnW) / 2),
@@ -287,10 +318,13 @@ export class RunScene extends Phaser.Scene {
         fontSize: "14px",
         color: COLOR.text,
       })
-      .setOrigin(0.5, 0.5);
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0);
   }
 
   private renderPanel(): void {
+    // Panel lives in screen space (scrollFactor 0), pinned to the bottom of
+    // the viewport regardless of camera scroll.
     this.add
       .rectangle(
         0,
@@ -300,23 +334,30 @@ export class RunScene extends Phaser.Scene {
         COLOR.panelBg,
       )
       .setOrigin(0, 0)
-      .setStrokeStyle(1, COLOR.tileBorder);
+      .setStrokeStyle(1, COLOR.tileBorder)
+      .setScrollFactor(0);
 
-    this.panelTitle = this.add.text(12, PANEL_Y + 12, "", {
-      fontFamily: "monospace",
-      fontSize: "16px",
-      color: COLOR.text,
-    });
-    this.panelLine1 = this.add.text(12, PANEL_Y + 36, "", {
-      fontFamily: "monospace",
-      fontSize: "14px",
-      color: COLOR.text,
-    });
-    this.panelLine2 = this.add.text(12, PANEL_Y + 56, "", {
-      fontFamily: "monospace",
-      fontSize: "14px",
-      color: COLOR.textDim,
-    });
+    this.panelTitle = this.add
+      .text(12, PANEL_Y + 12, "", {
+        fontFamily: "monospace",
+        fontSize: "16px",
+        color: COLOR.text,
+      })
+      .setScrollFactor(0);
+    this.panelLine1 = this.add
+      .text(12, PANEL_Y + 36, "", {
+        fontFamily: "monospace",
+        fontSize: "14px",
+        color: COLOR.text,
+      })
+      .setScrollFactor(0);
+    this.panelLine2 = this.add
+      .text(12, PANEL_Y + 56, "", {
+        fontFamily: "monospace",
+        fontSize: "14px",
+        color: COLOR.textDim,
+      })
+      .setScrollFactor(0);
 
     // Single action button slot. Text and color change with mode:
     //   "Confirm Move" — when a move is staged
@@ -330,6 +371,7 @@ export class RunScene extends Phaser.Scene {
     this.actionRect = this.add
       .rectangle(btnX, btnY, btnW, btnH, COLOR.buttonBg)
       .setOrigin(0, 0)
+      .setScrollFactor(0)
       .setInteractive(
         new Phaser.Geom.Rectangle(0, 0, btnW, btnH),
         Phaser.Geom.Rectangle.Contains,
@@ -343,6 +385,7 @@ export class RunScene extends Phaser.Scene {
         color: COLOR.text,
       })
       .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
       .setVisible(false);
   }
 
@@ -370,7 +413,7 @@ export class RunScene extends Phaser.Scene {
       )
       .setOrigin(0.5, 0.5);
     this.orientationOverlay = this.add.container(0, 0, [bg, text]);
-    this.orientationOverlay.setDepth(1000).setVisible(false);
+    this.orientationOverlay.setDepth(1000).setScrollFactor(0).setVisible(false);
   }
 
   private renderDeathOverlay(): void {
@@ -394,7 +437,7 @@ export class RunScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 0.5);
     this.deathOverlay = this.add.container(0, 0, [bg, this.deathOverlayText]);
-    this.deathOverlay.setDepth(1001).setVisible(false);
+    this.deathOverlay.setDepth(1001).setScrollFactor(0).setVisible(false);
   }
 
   // ----- Refresh routines -----
@@ -665,6 +708,11 @@ export class RunScene extends Phaser.Scene {
     if (this.isOrientationLocked) return;
     if (this.isAnimating) return;
     if (this.state.protagonist.currentHP <= 0) return;
+    // Reject taps that landed in the screen-space HUD or panel band: these
+    // are scrollFactor(0) overlays that obscure whatever map tiles happen
+    // to sit beneath them in world space, so pointer.worldY would point at
+    // a tile the user couldn't actually see.
+    if (pointer.y < HUD_HEIGHT || pointer.y >= PANEL_Y) return;
     const px = { x: pointer.worldX, y: pointer.worldY };
     if (
       !isInMapArea(
