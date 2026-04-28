@@ -89,11 +89,12 @@ describe("generateMap", () => {
     expect(seen.size).toBeGreaterThan(1);
   });
 
-  test("no door tiles appear in the stitched output (doors → floor)", () => {
+  test("no door tiles appear in the stitched output (doors → floor or exit)", () => {
     const map = generateMap(createRng(1));
+    const allowed = new Set(["floor", "wall", "exit"]);
     for (const row of map.tiles) {
       for (const tile of row) {
-        expect(tile.kind === "floor" || tile.kind === "wall").toBe(true);
+        expect(allowed.has(tile.kind)).toBe(true);
       }
     }
   });
@@ -173,5 +174,100 @@ describe("isFullyConnected", () => {
       spawnSlots: [],
     };
     expect(isFullyConnected(map, map.start)).toBe(true);
+  });
+});
+
+describe("generateMap exits (spec 0009)", () => {
+  test("every map has exactly 2 ExitTile cells", () => {
+    for (let s = 1; s <= 50; s++) {
+      const map = generateMap(createRng(s));
+      let count = 0;
+      for (const row of map.tiles) {
+        for (const tile of row) if (tile.kind === "exit") count++;
+      }
+      expect(count).toBe(2);
+    }
+  });
+
+  test("the two exits have distinct types (one stairwell, one fire-escape)", () => {
+    for (let s = 1; s <= 50; s++) {
+      const map = generateMap(createRng(s));
+      const types: string[] = [];
+      for (const row of map.tiles) {
+        for (const tile of row) {
+          if (tile.kind === "exit") types.push(tile.exitType);
+        }
+      }
+      expect(types.length).toBe(2);
+      expect(new Set(types)).toEqual(new Set(["stairwell", "fire-escape"]));
+    }
+  });
+
+  test("fire-escape is gated by athletic; stairwell is ungated", () => {
+    for (let s = 1; s <= 30; s++) {
+      const map = generateMap(createRng(s));
+      for (const row of map.tiles) {
+        for (const tile of row) {
+          if (tile.kind !== "exit") continue;
+          if (tile.exitType === "fire-escape") {
+            expect(tile.traitGate).toBe("athletic");
+          } else {
+            expect(tile.traitGate).toBeNull();
+          }
+        }
+      }
+    }
+  });
+
+  test("both exits are reachable from start", () => {
+    for (let s = 1; s <= 50; s++) {
+      const map = generateMap(createRng(s));
+      // isFullyConnected (spec 0009) walks floor + exit tiles together;
+      // if it returns true, every exit cell is reachable from start.
+      expect(isFullyConnected(map, map.start)).toBe(true);
+    }
+  });
+
+  test("same seed produces the same exit positions and types", () => {
+    const a = generateMap(createRng(1234));
+    const b = generateMap(createRng(1234));
+    const exitsOf = (
+      m: typeof a,
+    ): Array<{
+      col: number;
+      row: number;
+      type: string;
+    }> => {
+      const result: Array<{ col: number; row: number; type: string }> = [];
+      for (let r = 0; r < m.height; r++) {
+        for (let c = 0; c < m.width; c++) {
+          const t = m.tiles[r][c];
+          if (t.kind === "exit") {
+            result.push({ col: c, row: r, type: t.exitType });
+          }
+        }
+      }
+      return result;
+    };
+    expect(exitsOf(a)).toEqual(exitsOf(b));
+  });
+
+  test("different seeds vary the type-to-position assignment", () => {
+    // We can't guarantee positions differ across two arbitrary seeds, but
+    // across 30 seeds the (position, type) pairs should not collapse to a
+    // single value — that would mean RNG isn't shuffling the pairing.
+    const seen = new Set<string>();
+    for (let s = 1; s <= 30; s++) {
+      const m = generateMap(createRng(s));
+      for (let r = 0; r < m.height; r++) {
+        for (let c = 0; c < m.width; c++) {
+          const t = m.tiles[r][c];
+          if (t.kind === "exit") {
+            seen.add(`${c},${r},${t.exitType}`);
+          }
+        }
+      }
+    }
+    expect(seen.size).toBeGreaterThan(2);
   });
 });

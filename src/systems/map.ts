@@ -1,6 +1,10 @@
 /**
  * Map data — `Tile` tagged union, `Day1Map` shape, and the loader for the
  * static Day-1 layout. Procedural generation arrives in spec 0003+.
+ *
+ * Spec 0009 adds `ExitTile` (with type + optional trait gate per GDD §9.2).
+ * Exits are walkable; the static loader does not yet emit them — only
+ * procgen picks two of `StitchResult.openConnectors` per map.
  */
 
 import type { TilePos } from "./grid";
@@ -14,7 +18,16 @@ export interface WallTile {
   kind: "wall";
 }
 
-export type Tile = FloorTile | WallTile;
+export type ExitType = "stairwell" | "fire-escape";
+export type TraitGate = "athletic" | null;
+
+export interface ExitTile {
+  kind: "exit";
+  exitType: ExitType;
+  traitGate: TraitGate;
+}
+
+export type Tile = FloorTile | WallTile | ExitTile;
 
 export interface Day1Map {
   width: number;

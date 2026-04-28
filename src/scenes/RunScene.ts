@@ -35,6 +35,7 @@ import {
   pixelToTile,
   tileToPixel,
 } from "../systems/grid";
+import type { ExitTile } from "../systems/map";
 import { apCostToReach, reachableTiles } from "../systems/movement";
 import {
   type RunState,
@@ -79,7 +80,37 @@ const COLOR = {
   hpBarFg: 0x6abf6a,
   hpBarFgEnemy: 0xc05050,
   flash: 0xffffff,
+  // Spec 0009: reuse existing palette entries for exit tiles. Yellow
+  // (apLabel/stagedHaloStroke family) for the stairwell, blue
+  // (protagonist family) for the fire-escape — visually distinct, no
+  // new color introduced.
+  exitStairwell: 0xffd166,
+  exitFireEscape: 0x4ec1f7,
+  exitGateMarker: 0xffd166,
 } as const;
+
+const EXIT_CAPTION: Record<ExitTile["exitType"], string> = {
+  stairwell: "Stairwell — descent",
+  "fire-escape": "Fire-escape · Athletic",
+};
+
+const EXIT_TITLE: Record<ExitTile["exitType"], string> = {
+  stairwell: "Exit — Stairwell",
+  "fire-escape": "Exit — Fire-escape",
+};
+
+function tileFillColor(tile: { kind: "floor" | "wall" } | ExitTile): number {
+  switch (tile.kind) {
+    case "floor":
+      return COLOR.floor;
+    case "wall":
+      return COLOR.wall;
+    case "exit":
+      return tile.exitType === "stairwell"
+        ? COLOR.exitStairwell
+        : COLOR.exitFireEscape;
+  }
+}
 
 type Selection =
   | { kind: "protagonist" }
@@ -134,6 +165,10 @@ export class RunScene extends Phaser.Scene {
   private orientationOverlay!: Phaser.GameObjects.Container;
   private deathOverlay!: Phaser.GameObjects.Container;
   private deathOverlayText!: Phaser.GameObjects.Text;
+  private escapeOverlay!: Phaser.GameObjects.Container;
+  private escapeOverlayText!: Phaser.GameObjects.Text;
+  /** Set when the protagonist steps onto an exit. Freezes input. */
+  private escapedVia: ExitTile["exitType"] | null = null;
 
   constructor() {
     super({ key: "RunScene" });
@@ -145,7 +180,8 @@ export class RunScene extends Phaser.Scene {
       this.isOrientationLocked ||
       this.state.activeTurn === "enemy" ||
       this.isAnimating ||
-      this.state.protagonist.currentHP <= 0
+      this.state.protagonist.currentHP <= 0 ||
+      this.escapedVia !== null
     );
   }
 
@@ -181,6 +217,7 @@ export class RunScene extends Phaser.Scene {
     this.renderPanel();
     this.renderOrientationOverlay();
     this.renderDeathOverlay();
+    this.renderEscapeOverlay();
 
     // Configure camera scroll. Bounds are exactly the viewport when the map
     // fits, so scroll is clamped to (0, 0); otherwise extended by the map's
@@ -209,13 +246,40 @@ export class RunScene extends Phaser.Scene {
       for (let col = 0; col < this.state.map.width; col++) {
         const tile = this.state.map.tiles[row][col];
         const px = tileToPixel({ col, row }, this.gridCfg);
-        const fill = tile.kind === "floor" ? COLOR.floor : COLOR.wall;
+        const fill = tileFillColor(tile);
         this.add
           .rectangle(px.x, px.y, TILE_SIZE, TILE_SIZE, fill)
           .setOrigin(0, 0)
           .setStrokeStyle(1, COLOR.tileBorder);
+        if (tile.kind === "exit") {
+          this.renderExitDecorations(tile, { col, row }, px);
+        }
       }
     }
+  }
+
+  /**
+   * Per spec 0009 + ADR-0008: a trait-gate marker (small filled circle)
+   * in the top-left of the tile when gated, and a one-line caption
+   * rendered above the tile in world space (scrollFactor 1, so it
+   * tracks the camera per ADR-0011).
+   */
+  private renderExitDecorations(
+    tile: ExitTile,
+    _pos: TilePos,
+    px: { x: number; y: number },
+  ): void {
+    if (tile.traitGate === "athletic") {
+      this.add.circle(px.x + 6, px.y + 6, 3, COLOR.exitGateMarker);
+    }
+    const caption = EXIT_CAPTION[tile.exitType];
+    this.add
+      .text(px.x + TILE_SIZE / 2, px.y - 2, caption, {
+        fontFamily: "monospace",
+        fontSize: "10px",
+        color: COLOR.textDim,
+      })
+      .setOrigin(0.5, 1);
   }
 
   private renderEnemies(): void {
@@ -454,6 +518,30 @@ export class RunScene extends Phaser.Scene {
     this.deathOverlay.setDepth(1001).setScrollFactor(0).setVisible(false);
   }
 
+  private renderEscapeOverlay(): void {
+    const bg = this.add
+      .rectangle(
+        0,
+        0,
+        viewport.WORKING_WIDTH,
+        viewport.WORKING_HEIGHT,
+        0x000000,
+        0.94,
+      )
+      .setOrigin(0, 0);
+    this.escapeOverlayText = this.add
+      .text(viewport.WORKING_WIDTH / 2, viewport.WORKING_HEIGHT / 2, "", {
+        fontFamily: "monospace",
+        fontSize: "18px",
+        color: COLOR.text,
+        align: "center",
+        wordWrap: { width: viewport.WORKING_WIDTH - 32 },
+      })
+      .setOrigin(0.5, 0.5);
+    this.escapeOverlay = this.add.container(0, 0, [bg, this.escapeOverlayText]);
+    this.escapeOverlay.setDepth(1001).setScrollFactor(0).setVisible(false);
+  }
+
   // ----- Refresh routines -----
 
   private refreshAll(): void {
@@ -628,24 +716,32 @@ export class RunScene extends Phaser.Scene {
     } else {
       const tile =
         this.state.map.tiles[this.selection.pos.row]?.[this.selection.pos.col];
-      const kind = tile?.kind ?? "—";
-      const cost = apCostToReach(
-        this.state.protagonist.position,
-        this.selection.pos,
-        this.state.map,
-        enemyTiles(this.state),
-      );
-      const reachable =
-        Number.isFinite(cost) &&
-        cost <= this.state.protagonist.currentAP &&
-        cost > 0;
-      this.panelTitle.setText(
-        `Tile (${this.selection.pos.col}, ${this.selection.pos.row})`,
-      );
-      this.panelLine1.setText(`Kind: ${kind}`);
-      this.panelLine2.setText(
-        reachable ? `Reachable · cost ${cost} AP` : "Out of range",
-      );
+      if (tile && tile.kind === "exit") {
+        this.panelTitle.setText(EXIT_TITLE[tile.exitType]);
+        this.panelLine1.setText(
+          `Trait gate: ${tile.traitGate === "athletic" ? "Athletic" : "—"}`,
+        );
+        this.panelLine2.setText(EXIT_CAPTION[tile.exitType]);
+      } else {
+        const kind = tile?.kind ?? "—";
+        const cost = apCostToReach(
+          this.state.protagonist.position,
+          this.selection.pos,
+          this.state.map,
+          enemyTiles(this.state),
+        );
+        const reachable =
+          Number.isFinite(cost) &&
+          cost <= this.state.protagonist.currentAP &&
+          cost > 0;
+        this.panelTitle.setText(
+          `Tile (${this.selection.pos.col}, ${this.selection.pos.row})`,
+        );
+        this.panelLine1.setText(`Kind: ${kind}`);
+        this.panelLine2.setText(
+          reachable ? `Reachable · cost ${cost} AP` : "Out of range",
+        );
+      }
     }
     this.refreshActionButton();
     this.refreshStagedHalo();
@@ -908,6 +1004,25 @@ export class RunScene extends Phaser.Scene {
       px.x + TILE_SIZE / 2,
       px.y + TILE_SIZE / 2,
     );
+    this.refreshAll();
+    // Spec 0009: stepping onto an exit ends the run. Trait gating is
+    // displayed but not enforced this spec — TODO when traits land.
+    const { col, row } = this.state.protagonist.position;
+    const tile = this.state.map.tiles[row]?.[col];
+    if (tile && tile.kind === "exit") {
+      this.handleEscape(tile);
+    }
+  }
+
+  // ----- Escape -----
+
+  private handleEscape(tile: ExitTile): void {
+    this.escapedVia = tile.exitType;
+    const label = tile.exitType === "stairwell" ? "Stairwell" : "Fire-escape";
+    this.escapeOverlayText.setText(
+      `You escaped\nVia ${label} · Turn ${this.state.turn}\n\nRefresh to play another run`,
+    );
+    this.escapeOverlay.setVisible(true);
     this.refreshAll();
   }
 

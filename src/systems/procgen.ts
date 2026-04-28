@@ -22,7 +22,7 @@ import {
   oppositeSide,
 } from "./chunk";
 import type { TilePos } from "./grid";
-import type { Day1Map, Tile } from "./map";
+import type { Day1Map, ExitTile, Tile } from "./map";
 import type { Rng } from "./rng";
 
 const RETRY_CAP = 10;
@@ -42,7 +42,7 @@ interface OpenConnector {
 
 export interface StitchResult {
   placed: PlacedChunk[];
-  /** Connectors that remain unconnected — candidate exits in spec 0008. */
+  /** Connectors that remain unconnected — `materialize` (spec 0009) picks two and converts them to `ExitTile`. */
   openConnectors: OpenConnector[];
 }
 
@@ -215,6 +215,10 @@ function shuffle<T>(arr: readonly T[], rng: Rng): T[] {
  * Build a `Day1Map` by stitching 3-4 chunks. Retries up to `RETRY_CAP`
  * times if a particular pick fails connectivity / exit / spawn-slot
  * validation. Throws after exhausting retries.
+ *
+ * Spec 0009: after a successful stitch, two of the unconnected
+ * connectors are picked via the same RNG and converted to `ExitTile`s
+ * (one stairwell with no gate, one fire-escape with an Athletic gate).
  */
 export function generateMap(rng: Rng): Day1Map {
   const library = loadChunks();
@@ -222,23 +226,71 @@ export function generateMap(rng: Rng): Day1Map {
     const targetCount = rng.intInRange(3, 5); // 3 or 4
     const result = stitch(rng, library, targetCount);
     if (result === null) continue;
-    const map = materialize(result);
+    if (result.openConnectors.length < 2) continue;
+    const exits = pickExits(result, rng);
+    const map = materialize(result, exits);
     if (map === null) continue;
     if (!isFullyConnected(map, map.start)) continue;
-    if (result.openConnectors.length < 2) continue;
     if (map.spawnSlots.length === 0) continue;
+    if (countExits(map) !== 2) continue;
     return map;
   }
   throw new Error(`generateMap: gave up after ${RETRY_CAP} retries`);
 }
 
 /**
+ * Pre-normalization absolute position + intended `ExitTile` payload for
+ * each picked exit. `materialize` consumes these and writes the cells
+ * after coordinate normalization.
+ */
+interface PickedExit {
+  absPos: TilePos;
+  tile: ExitTile;
+}
+
+/**
+ * Pick exactly 2 of the open connectors and assign one stairwell + one
+ * fire-escape (the gated one). RNG-shuffled so the type-to-connector
+ * pairing varies across seeds. Caller must guarantee
+ * `result.openConnectors.length >= 2`.
+ */
+function pickExits(result: StitchResult, rng: Rng): PickedExit[] {
+  const shuffled = shuffle(result.openConnectors, rng);
+  const a = shuffled[0];
+  const b = shuffled[1];
+  return [
+    {
+      absPos: a.absPos,
+      tile: { kind: "exit", exitType: "stairwell", traitGate: null },
+    },
+    {
+      absPos: b.absPos,
+      tile: { kind: "exit", exitType: "fire-escape", traitGate: "athletic" },
+    },
+  ];
+}
+
+function countExits(map: Day1Map): number {
+  let n = 0;
+  for (const row of map.tiles) {
+    for (const tile of row) {
+      if (tile.kind === "exit") n++;
+    }
+  }
+  return n;
+}
+
+/**
  * Convert a `StitchResult` into a `Day1Map`: normalize coordinates so
  * the top-left is `(0, 0)`, allocate a tile grid sized to the bounding
  * box, blit each chunk's tiles into the grid, lift door tiles to floor,
- * compute spawn slots in absolute coordinates, return.
+ * write picked exits over the chunk-blitted floor, compute spawn slots
+ * in absolute coordinates, return.
  */
-function materialize(result: StitchResult): Day1Map | null {
+function materialize(
+  result: StitchResult,
+  exits: PickedExit[],
+): Day1Map | null {
   if (result.placed.length === 0) return null;
 
   // Compute bounding box.
@@ -274,6 +326,14 @@ function materialize(result: StitchResult): Day1Map | null {
     }
   }
 
+  // Overwrite picked exits onto the (already-floor) connector cells.
+  for (const exit of exits) {
+    const col = exit.absPos.col - minCol;
+    const row = exit.absPos.row - minRow;
+    if (col < 0 || col >= width || row < 0 || row >= height) return null;
+    tiles[row][col] = exit.tile;
+  }
+
   // Translate the entrance chunk's start to absolute coordinates.
   const entrance = result.placed[0]; // entrance is always placed first
   if (entrance.chunk.start === null) return null;
@@ -303,17 +363,18 @@ function liftToMapTile(t: ChunkTile): Tile {
 }
 
 /**
- * BFS from `from` over 4-connected floor tiles. Returns `true` iff every
- * floor tile in the map is reachable.
+ * BFS from `from` over 4-connected walkable tiles (floor + exit).
+ * Returns `true` iff every walkable tile in the map is reachable from
+ * `from`. Spec 0009: exits are walkable.
  */
 export function isFullyConnected(map: Day1Map, from: TilePos): boolean {
-  let totalFloors = 0;
+  let totalWalkable = 0;
   for (const row of map.tiles) {
     for (const tile of row) {
-      if (tile.kind === "floor") totalFloors++;
+      if (tile.kind === "floor" || tile.kind === "exit") totalWalkable++;
     }
   }
-  if (totalFloors === 0) return true;
+  if (totalWalkable === 0) return true;
 
   const visited = new Set<string>();
   const queue: TilePos[] = [];
@@ -322,7 +383,8 @@ export function isFullyConnected(map: Day1Map, from: TilePos): boolean {
     if (p.col < 0 || p.col >= map.width || p.row < 0 || p.row >= map.height) {
       return;
     }
-    if (map.tiles[p.row][p.col].kind !== "floor") return;
+    const kind = map.tiles[p.row][p.col].kind;
+    if (kind !== "floor" && kind !== "exit") return;
     const key = `${p.col},${p.row}`;
     if (visited.has(key)) return;
     visited.add(key);
@@ -338,5 +400,5 @@ export function isFullyConnected(map: Day1Map, from: TilePos): boolean {
     push({ col: cur.col, row: cur.row - 1 });
   }
 
-  return visited.size === totalFloors;
+  return visited.size === totalWalkable;
 }

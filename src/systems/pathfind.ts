@@ -32,8 +32,10 @@ function isWalkable(t: TilePos, map: Day1Map): boolean {
   if (t.col < 0 || t.col >= map.width || t.row < 0 || t.row >= map.height) {
     return false;
   }
-  const tile = map.tiles[t.row][t.col];
-  return tile.kind === "floor";
+  const kind = map.tiles[t.row][t.col].kind;
+  // Spec 0009: exits are walkable. Stepping onto one ends the run; that
+  // higher-level effect is the scene's concern, not pathfind's.
+  return kind === "floor" || kind === "exit";
 }
 
 /**

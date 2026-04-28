@@ -27,20 +27,20 @@ GDD §3 pillar 2 (*procedural assembly, authored components*) and §13 Day 3 wan
   - `stitch(rng, library, targetCount): StitchResult | null`. Returns `null` on failure (caller retries with a new RNG seed).
   - Algorithm: place an entrance chunk at origin. Repeatedly: pick a random open connector, pick a chunk with a compatible (opposite-side) connector, compute the placement offset so the door tiles end up adjacent, check no bounding-box overlap with already-placed chunks. If no compatible chunk fits, try another connector or a different chunk for that connector. Give up on this iteration if no progress; caller retries.
   - Coordinate normalization: chunks may end up at negative offsets (placed to the left/north of the entrance). After stitching, translate all positions so the resulting map's origin is `(0, 0)`.
-  - Door tiles in chunks become `floor` in the stitched map; unconnected connectors remain visible but stay as `door` tiles in the chunk content (spec 0008 introduces `ExitTile` and converts them).
-- **`generateMap(rng)` rewired.** Calls `stitch` with a target chunk count of `rng.intInRange(3, 5)` (3 or 4 chunks). Validates connectivity (existing). Validates that the stitched map has **≥ 2 unconnected connectors** remaining (these become exit candidates in spec 0008). On any validation failure, calls `stitch` again with the same RNG (deterministic retry chain). Up to 10 retries before throwing.
+  - Door tiles in chunks become `floor` in the stitched map; unconnected connectors remain visible but stay as `door` tiles in the chunk content (spec 0009 introduces `ExitTile` and converts them).
+- **`generateMap(rng)` rewired.** Calls `stitch` with a target chunk count of `rng.intInRange(3, 5)` (3 or 4 chunks). Validates connectivity (existing). Validates that the stitched map has **≥ 2 unconnected connectors** remaining (these become exit candidates in spec 0009). On any validation failure, calls `stitch` again with the same RNG (deterministic retry chain). Up to 10 retries before throwing.
 - **Spawn slots replace `placeEnemiesOnMap`.** Each placed chunk contributes its spawn slots (translated to absolute coordinates) to a global pool. `generateMap` returns the pool as `Day1Map.spawnSlots`. `createRunState` picks `loadDay1Enemies().length` positions from the pool via `rng.pickOne` (without replacement) and assigns them to enemies.
 - **Scene continues to work.** The scene already reads `state.map.width`/`height` and centers the map via `gridCfg.offset` (spec 0006). Larger maps fill more of the viewport — possibly all of it.
 
 ### Out of scope
 
-- **`ExitTile` rendering and Day chain.** Spec 0008 — exits land there. Spec 0007 leaves unconnected connectors as `door`-typed tiles (visible as floor) in the map data; they're functionally floor tiles for now.
-- **Specific exit-type semantics** (stairwell vs fire-escape per GDD §9). Spec 0008.
-- **Trait-gated exits** (Athletic for fire-escape). Spec 0008+.
-- **Day 2 / handcrafted maps.** Day 4 / spec 0008 territory.
+- **`ExitTile` rendering and Day chain.** Spec 0009 — exits land there. Spec 0007 leaves unconnected connectors as `door`-typed tiles (visible as floor) in the map data; they're functionally floor tiles for now.
+- **Specific exit-type semantics** (stairwell vs fire-escape per GDD §9). Spec 0009.
+- **Trait-gated exits** (Athletic for fire-escape). Spec 0009+.
+- **Day 2 / handcrafted maps.** Day 4 / spec 0010 territory.
 - **Real GDD §8.2 chunk roster** (living room, kitchen, bedroom, etc.). Spec 0007 ships 8 chunks but they're abstract layouts, not themed rooms — themes come with art (Day 7) or with §10 visual coherence. Spec naming is functional ("entrance-a", "corner-room", "hallway") not thematic ("kitchen").
 - **Multiple enemies per chunk.** One enemy per slot for now; multi-enemy is implicit (more enemies = more slots used).
-- **Doors as visible glyphs.** Doors-become-floor stays. Visual indication of doors is spec 0008 (doors become a distinct tile kind for visual cue).
+- **Doors as visible glyphs.** Doors-become-floor stays. Visual indication of doors is deferred to a Day-5 IA-pass spec (doors become a distinct tile kind for visual cue).
 - **A `quality-reviewer` pass.**
 
 ## Inputs
@@ -80,7 +80,7 @@ Per ADR-0008. No new UI in this spec. The user notices:
 ### `generateMap` integration
 
 - [ ] **[unit]** `generateMap(rng)` returns a connected `Day1Map` for every seed in 1..50.
-- [ ] **[unit]** Every generated map has ≥ 2 unconnected connectors (spec 0008 will treat these as exit candidates).
+- [ ] **[unit]** Every generated map has ≥ 2 unconnected connectors (spec 0009 will treat these as exit candidates).
 - [ ] **[unit]** Every generated map has at least 1 spawn slot (so enemies can be placed).
 - [ ] **[unit]** Generated maps have variable dimensions (sample 50 seeds; > 1 distinct `(width, height)` pair).
 - [ ] **[unit]** `generateMap` is deterministic — same seed yields equal map.

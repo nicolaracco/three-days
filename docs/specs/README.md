@@ -32,3 +32,4 @@ Specs are numbered in the order they're authored, not in the order of the roadma
 | 0006 | [Live procgen integration](0006-live-procgen-integration.md)                            | Done     | §13 Day 3   |
 | 0007 | [Full procgen (connectors, multi-chunk, spawn slots)](0007-full-procgen.md)             | Approved | §13 Day 3   |
 | 0008 | [Build version tag](0008-build-version-tag.md)                                          | In progress | N/A — dev ergonomics |
+| 0009 | [Exits — `ExitTile`, two-exit guarantee, escape stub](0009-exits.md)                    | In progress | §13 Day 3 |

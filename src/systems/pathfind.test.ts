@@ -1,4 +1,5 @@
 import { test, expect, describe } from "bun:test";
+import type { Day1Map } from "./map";
 import { loadDay1Map } from "./map";
 import { bfs } from "./pathfind";
 
@@ -58,5 +59,34 @@ describe("bfs", () => {
     const to = { col: 6, row: 7 };
     const path = bfs(from, to, map, [from]);
     expect(path).toBeNull();
+  });
+
+  test("treats ExitTile as walkable, both as a step and as a destination (spec 0009)", () => {
+    const exitMap: Day1Map = {
+      width: 3,
+      height: 1,
+      start: { col: 0, row: 0 },
+      tiles: [
+        [
+          { kind: "floor" },
+          { kind: "exit", exitType: "stairwell", traitGate: null },
+          { kind: "floor" },
+        ],
+      ],
+      spawnSlots: [],
+    };
+    // Step through the exit tile to a floor on the far side.
+    const through = bfs({ col: 0, row: 0 }, { col: 2, row: 0 }, exitMap, []);
+    expect(through).toEqual([
+      { col: 0, row: 0 },
+      { col: 1, row: 0 },
+      { col: 2, row: 0 },
+    ]);
+    // Land on the exit tile directly.
+    const onto = bfs({ col: 0, row: 0 }, { col: 1, row: 0 }, exitMap, []);
+    expect(onto).toEqual([
+      { col: 0, row: 0 },
+      { col: 1, row: 0 },
+    ]);
   });
 });
