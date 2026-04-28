@@ -24,6 +24,7 @@ If those don't all apply, the rule probably belongs in `CLAUDE.md` or as a comme
 | 0008 | [UI architecture (platform, input, information design)](0008-ui-architecture.md) | Accepted |
 | 0009 | [Testing discipline](0009-testing-discipline.md)                       | Accepted |
 | 0010 | [Remote preview pipeline (Cloudflare Workers + Static Assets)](0010-preview-pipeline.md) | Accepted |
+| 0011 | [World camera with screen-space UI overlays](0011-world-camera.md)     | Accepted |
 
 ## Authoring
 

@@ -15,7 +15,7 @@ This project simultaneously serves a learning agenda and a commercial quality ba
 | What does the game do? Why?           | [`docs/three-days-gdd.md`](docs/three-days-gdd.md)                        |
 | What's the quality bar?               | GDD §12                                                                   |
 | What's the build plan / cut list?     | GDD §13                                                                   |
-| Why is the architecture this way?     | [`docs/adrs/`](docs/adrs/README.md) — ADR-0001 through ADR-0010           |
+| Why is the architecture this way?     | [`docs/adrs/`](docs/adrs/README.md) — ADR-0001 through ADR-0011           |
 | What's the contract for feature X?    | [`docs/specs/`](docs/specs/README.md) — one spec per shippable feature    |
 | Daily progress log                    | `DEVLOG.md` (created at first entry; see `/devlog` slash command)         |
 
@@ -42,6 +42,7 @@ Do not invent architectural rules inside specs or code. If a feature would requi
 - **Playable on desktop landscape AND iPhone portrait; pointer events; no hover dependency — always-visible glyphs + sticky inspection panel + targeting projects all costs at once** — ADR-0008
 - **`bun test` + red-green-verify; manual play-test for §12 sub-bars on desktop and iPhone** — ADR-0009
 - **Cloudflare Workers Builds preview per branch (`<branch>-three-days.<account>.workers.dev`, deployed via `wrangler deploy`); itch.io is the Day-7 ship target only** — ADR-0010
+- **World camera follows the protagonist; HUD / panel / overlays use `setScrollFactor(0)`; pointer handlers gate on the screen-space HUD/panel band before resolving world coordinates** — ADR-0011
 
 Don't add dependencies casually. Each new dep is build-time and bug-surface tax. If "we could write this in 30 lines," write the 30 lines.
 
