@@ -1,6 +1,6 @@
 # Spec 0008: Build version tag
 
-**Status:** In progress
+**Status:** Done
 **Roadmap day:** N/A — developer ergonomics
 **Owner:** Nicola
 **Related ADRs:** ADR-0001 (Vite build), ADR-0008 (UI architecture), ADR-0010 (preview pipeline), ADR-0011 (world camera)

@@ -30,9 +30,9 @@ Specs are numbered in the order they're authored, not in the order of the roadma
 | 0004 | [Combat skeleton (melee, HP, damage, death)](0004-combat-skeleton.md)                   | Done     | §13 Day 2   |
 | 0005 | [Procgen foundation (chunks + RNG + stitcher + validator)](0005-procgen-foundation.md)  | Done     | §13 Day 3   |
 | 0006 | [Live procgen integration](0006-live-procgen-integration.md)                            | Done     | §13 Day 3   |
-| 0007 | [Full procgen (connectors, multi-chunk, spawn slots)](0007-full-procgen.md)             | Approved | §13 Day 3   |
-| 0008 | [Build version tag](0008-build-version-tag.md)                                          | In progress | N/A — dev ergonomics |
-| 0009 | [Exits — `ExitTile`, two-exit guarantee, escape stub](0009-exits.md)                    | In progress | §13 Day 3 |
-| 0010 | [Items — medkit and flashbang](0010-items.md)                                           | In progress | §13 Day 3 |
-| 0011 | [Day chain — Day-2 maps, transition, objectives, run-end](0011-day-chain.md)            | In progress | §13 Day 4 |
-| 0012 | [Ranged enemies + line-of-sight](0012-ranged-enemies-los.md)                            | In progress | §13 Day 4 |
+| 0007 | [Full procgen (connectors, multi-chunk, spawn slots)](0007-full-procgen.md)             | Done     | §13 Day 3   |
+| 0008 | [Build version tag](0008-build-version-tag.md)                                          | Done     | N/A — dev ergonomics |
+| 0009 | [Exits — `ExitTile`, two-exit guarantee, escape stub](0009-exits.md)                    | Done     | §13 Day 3 |
+| 0010 | [Items — medkit and flashbang](0010-items.md)                                           | Done     | §13 Day 3 |
+| 0011 | [Day chain — Day-2 maps, transition, objectives, run-end](0011-day-chain.md)            | Done     | §13 Day 4 |
+| 0012 | [Ranged enemies + line-of-sight](0012-ranged-enemies-los.md)                            | Done     | §13 Day 4 |

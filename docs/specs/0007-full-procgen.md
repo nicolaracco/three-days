@@ -1,6 +1,6 @@
 # Spec 0007: Full procgen — connectors, multi-chunk, spawn slots, larger maps
 
-**Status:** Approved
+**Status:** Done
 **Roadmap day:** GDD §13 Day 3 (procgen, third pass — closes the procgen-for-Day-1 deliverable). Day 4 (Day chain + Day-2 maps) is the next spec on top of this.
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture), ADR-0009 (testing discipline)

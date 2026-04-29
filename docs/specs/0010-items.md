@@ -1,6 +1,6 @@
 # Spec 0010: Items — medkit and flashbang
 
-**Status:** In progress
+**Status:** Done
 **Roadmap day:** GDD §13 Day 3 (closes the "enemy and item placement works" criterion)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture — item glyphs, panel, selection), ADR-0011 (world camera)

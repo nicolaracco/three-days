@@ -1,6 +1,6 @@
 # Spec 0011: Day chain — Day-2 handcrafted maps, transition, objectives, run-end summary
 
-**Status:** In progress
+**Status:** Done
 **Roadmap day:** GDD §13 Day 4 (closes the Day-4 milestone except for ranged-enemy and cover work, both deferred to their own specs)
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture — HUD, panel, selection), ADR-0009 (testing discipline), ADR-0011 (world camera)

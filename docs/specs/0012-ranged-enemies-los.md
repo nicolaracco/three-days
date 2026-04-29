@@ -1,6 +1,6 @@
 # Spec 0012: Ranged enemies + line-of-sight
 
-**Status:** In progress
+**Status:** Done
 **Roadmap day:** GDD §13 Day 4 cleanup (closes the rooftop "more ranged enemies" gap that spec 0011 shipped as a known §12.3 deferral); also unblocks the Vigilant trait dependency for the Day-5 traits spec.
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture — kind glyphs), ADR-0009 (testing discipline), ADR-0011 (world camera)

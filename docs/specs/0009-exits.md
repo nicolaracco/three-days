@@ -1,6 +1,6 @@
 # Spec 0009: Exits — `ExitTile`, two-exit guarantee, escape stub
 
-**Status:** In progress
+**Status:** Done
 **Roadmap day:** GDD §13 Day 3 (closes the "2 reachable exits" criterion); stubs the Day-4 day chain.
 **Owner:** Nicola
 **Related ADRs:** ADR-0004 (layered architecture), ADR-0005 (tile/pixel coordinates), ADR-0007 (seeded RNG), ADR-0008 (UI architecture — exit glyphs, panel, selection), ADR-0011 (world camera)
