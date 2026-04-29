@@ -37,6 +37,8 @@ import {
   tileToPixel,
 } from "../systems/grid";
 import { type ItemKind, pickupItemAt } from "../systems/item";
+import { hasLoS } from "../systems/los";
+import { getTrait, type TraitId } from "../systems/trait";
 import type { ExitTile } from "../systems/map";
 import { apCostToReach, reachableTiles } from "../systems/movement";
 import {
@@ -174,6 +176,13 @@ export class RunScene extends Phaser.Scene {
   private targetingLayer!: Phaser.GameObjects.Container;
   private stagedLayer!: Phaser.GameObjects.Container;
   private itemsLayer!: Phaser.GameObjects.Container;
+  /**
+   * Spec 0013 — Vigilant's persistent LoS overlay. Container holds a
+   * tinted rectangle per tile in any ranged alien's line-of-sight.
+   * Cleared and rebuilt on every state-affecting refresh so the cones
+   * track enemy movement and death without bookkeeping.
+   */
+  private losConesLayer!: Phaser.GameObjects.Container;
   private protagonistSprite!: Phaser.GameObjects.Arc;
   private protagonistHpBar!: HpBar;
   /**
@@ -226,6 +235,8 @@ export class RunScene extends Phaser.Scene {
    * flip into Day 2; `create` reads this on the next tick.
    */
   private initialState: RunState | null = null;
+  /** Spec 0013 — trait payload from `TraitsScene` for a fresh Day-1 run. */
+  private initialTraits: TraitId[] | null = null;
 
   constructor() {
     super({ key: "RunScene" });
@@ -246,15 +257,27 @@ export class RunScene extends Phaser.Scene {
    * Phaser calls `init(data)` on every (re)start; `data.initialState`
    * carries the post-`transitionToDay2` state we want to adopt
    * verbatim instead of running procgen for a fresh Day-1 run.
+   *
+   * Spec 0013 — `data.traits` is the trait payload from `TraitsScene`
+   * for a fresh run. Mutually exclusive with `initialState` (a Day-2
+   * transition uses the existing state's traits and has no need to
+   * pass them again).
    */
-  init(data?: { initialState?: RunState }): void {
+  init(data?: { initialState?: RunState; traits?: TraitId[] }): void {
     this.initialState = data?.initialState ?? null;
+    this.initialTraits = data?.traits ?? null;
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(COLOR.sceneBg);
-    this.state = this.initialState ?? createRunState({ seed: Date.now() });
+    this.state =
+      this.initialState ??
+      createRunState({
+        seed: Date.now(),
+        traits: this.initialTraits ?? [],
+      });
     this.initialState = null;
+    this.initialTraits = null;
 
     // Map placement is per-axis: center within the viewport / map-area band
     // when the map is smaller, otherwise pin at the top-left of the band so
@@ -276,6 +299,7 @@ export class RunScene extends Phaser.Scene {
     };
 
     this.renderMap();
+    this.losConesLayer = this.add.container(0, 0);
     this.targetingLayer = this.add.container(0, 0);
     this.stagedLayer = this.add.container(0, 0);
     this.itemsLayer = this.add.container(0, 0);
@@ -624,6 +648,7 @@ export class RunScene extends Phaser.Scene {
   // ----- Refresh routines -----
 
   private refreshAll(): void {
+    this.refreshLosCones();
     this.refreshTargeting();
     this.refreshHpBars();
     this.refreshHUD();
@@ -632,6 +657,40 @@ export class RunScene extends Phaser.Scene {
     this.refreshItems();
     this.refreshEnemySprites();
     this.refreshPanel();
+  }
+
+  /**
+   * Spec 0013 — render the persistent LoS cones for the Vigilant
+   * trait. Tinted rectangles cover every walkable tile that has LoS
+   * to any ranged enemy. Skipped entirely when Vigilant isn't picked
+   * so non-Vigilant runs stay visually quiet.
+   */
+  private refreshLosCones(): void {
+    this.losConesLayer.removeAll(true);
+    if (!this.state.traits.includes("vigilant")) return;
+    const rangedEnemies = this.state.enemies.filter((e) => e.kind === "ranged");
+    if (rangedEnemies.length === 0) return;
+    const seen = new Set<string>();
+    for (const enemy of rangedEnemies) {
+      for (let row = 0; row < this.state.map.height; row++) {
+        for (let col = 0; col < this.state.map.width; col++) {
+          const tile = this.state.map.tiles[row][col];
+          if (tile.kind !== "floor" && tile.kind !== "exit") continue;
+          const key = `${col},${row}`;
+          if (seen.has(key)) continue;
+          if (col === enemy.position.col && row === enemy.position.row) {
+            continue;
+          }
+          if (!hasLoS(enemy.position, { col, row }, this.state.map)) continue;
+          seen.add(key);
+          const px = tileToPixel({ col, row }, this.gridCfg);
+          const overlay = this.add
+            .rectangle(px.x, px.y, TILE_SIZE, TILE_SIZE, COLOR.enemyMelee, 0.15)
+            .setOrigin(0, 0);
+          this.losConesLayer.add(overlay);
+        }
+      }
+    }
   }
 
   /**
@@ -661,12 +720,23 @@ export class RunScene extends Phaser.Scene {
     if (this.state.protagonist.currentHP <= 0) return;
     const { position, currentAP } = this.state.protagonist;
     const blocked = enemyTiles(this.state);
+    // Spec 0013: filter out Athletic-gated exits when the player lacks
+    // the trait. The reachable overlay should match `commitMove`'s
+    // success surface — gated tiles aren't really walkable for this
+    // run.
+    const hasAthletic = this.state.traits.includes("athletic");
     const reachable = reachableTiles(
       position,
       currentAP,
       this.state.map,
       blocked,
-    ).filter((t) => !(t.col === position.col && t.row === position.row));
+    )
+      .filter((t) => !(t.col === position.col && t.row === position.row))
+      .filter((t) => {
+        if (hasAthletic) return true;
+        const tile = this.state.map.tiles[t.row]?.[t.col];
+        return !(tile && tile.kind === "exit" && tile.traitGate === "athletic");
+      });
     for (const tile of reachable) {
       const px = tileToPixel(tile, this.gridCfg);
       const cost = apCostToReach(position, tile, this.state.map, blocked);
@@ -823,8 +893,16 @@ export class RunScene extends Phaser.Scene {
     if (this.selection.kind === "protagonist") {
       const inv = this.state.protagonist.inventory;
       this.panelTitle.setText("Protagonist");
+      // Spec 0013: on Day 2 the trait names suffix the HP/AP line so the
+      // player keeps a reminder of what their run is about. Day 1's
+      // panel already carries plenty (inventory line below); skipping
+      // the suffix there keeps line widths in check.
+      const traitSuffix =
+        this.state.currentDay === 2 && this.state.traits.length > 0
+          ? ` · [${this.state.traits.map((id) => getTrait(id).name).join(", ")}]`
+          : "";
       this.panelLine1.setText(
-        `HP ${Math.max(0, this.state.protagonist.currentHP)}/${this.state.protagonist.maxHP} · AP ${this.state.protagonist.currentAP}/${this.state.protagonist.maxAP}`,
+        `HP ${Math.max(0, this.state.protagonist.currentHP)}/${this.state.protagonist.maxHP} · AP ${this.state.protagonist.currentAP}/${this.state.protagonist.maxAP}${traitSuffix}`,
       );
       // Spec 0011: on Day 2, panel line2 surfaces the objective instead
       // of the inventory line. Inventory is still readable via the

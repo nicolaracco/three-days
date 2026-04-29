@@ -6,6 +6,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.scene.start("RunScene");
+    // Spec 0013: pre-run trait picker between Boot and Run.
+    this.scene.start("TraitsScene");
   }
 }

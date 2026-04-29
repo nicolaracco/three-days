@@ -254,3 +254,76 @@ describe("ranged attacks (spec 0012)", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe("Hypochondriac arming on damage taken (spec 0013)", () => {
+  test("first damage with Hypochondriac arms hypochondriacPenaltyPending", () => {
+    // Build a fresh state with Hypochondriac, place the protagonist
+    // adjacent to the melee enemy, run the enemy attack on the
+    // protagonist, and verify the pending flag flips on.
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits: ["hypochondriac"],
+    });
+    const adjacent = withPlayerAdjacent(base);
+    const onEnemyTurn = advanceTurn(adjacent);
+    expect(onEnemyTurn.protagonist.hypochondriacPenaltyPending).toBe(false);
+    const result = commitAttack(onEnemyTurn, {
+      attackerSide: "enemy",
+      attackerId: "alien-1",
+      weaponId: "improvised-melee",
+      targetId: "protagonist",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.state.protagonist.hypochondriacPenaltyPending).toBe(true);
+  });
+
+  test("damage without Hypochondriac does NOT arm the pending flag", () => {
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits: [],
+    });
+    const adjacent = withPlayerAdjacent(base);
+    const onEnemyTurn = advanceTurn(adjacent);
+    const result = commitAttack(onEnemyTurn, {
+      attackerSide: "enemy",
+      attackerId: "alien-1",
+      weaponId: "improvised-melee",
+      targetId: "protagonist",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.state.protagonist.hypochondriacPenaltyPending).toBe(false);
+  });
+
+  test("damage after triggeredThisMap does NOT re-arm", () => {
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits: ["hypochondriac"],
+    });
+    const adjacent = withPlayerAdjacent(base);
+    const onEnemyTurn = advanceTurn(adjacent);
+    const triggered: RunState = {
+      ...onEnemyTurn,
+      protagonist: {
+        ...onEnemyTurn.protagonist,
+        hypochondriacTriggeredThisMap: true,
+      },
+    };
+    const result = commitAttack(triggered, {
+      attackerSide: "enemy",
+      attackerId: "alien-1",
+      weaponId: "improvised-melee",
+      targetId: "protagonist",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.state.protagonist.hypochondriacPenaltyPending).toBe(false);
+  });
+});

@@ -13,7 +13,9 @@ import {
   transitionToDay2,
   useFlashbang,
   useMedkit,
+  type RunState,
 } from "./run-state";
+import type { TraitId } from "./trait";
 
 /**
  * Fixture state — built against the static 11×15 all-floor map and the
@@ -207,7 +209,18 @@ describe("advanceTurn", () => {
 
 describe("useMedkit (spec 0010)", () => {
   test("rejects with 'no-item' when inventory is empty", () => {
-    const state = fixtureState();
+    // Spec 0013 raised the baseline starting medkit count to 1, so
+    // we have to drop HP and clear inventory explicitly to reach the
+    // no-item rejection path.
+    const base = fixtureState();
+    const state = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        currentHP: 1,
+        inventory: { medkit: 0, flashbang: 0 },
+      },
+    };
     const result = useMedkit(state);
     if (result.ok) throw new Error("expected rejection");
     expect(result.reason).toBe("no-item");
@@ -477,5 +490,186 @@ describe("checkRunEnd (spec 0011)", () => {
     const b = checkRunEnd(a);
     expect(a).toBe(lost);
     expect(b).toBe(a);
+  });
+});
+
+describe("Traits — starting state (spec 0013)", () => {
+  function withTraits(traits: TraitId[]): RunState {
+    return createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits,
+    });
+  }
+
+  test("baseline (no traits) starts with 1 medkit, 0 flashbang, maxAP", () => {
+    const state = withTraits([]);
+    expect(state.protagonist.inventory).toEqual({ medkit: 1, flashbang: 0 });
+    expect(state.protagonist.currentAP).toBe(state.protagonist.maxAP);
+    expect(state.traits).toEqual([]);
+  });
+
+  test("Athletic adds +1 AP on the first turn of each map", () => {
+    const state = withTraits(["athletic"]);
+    expect(state.protagonist.currentAP).toBe(state.protagonist.maxAP + 1);
+  });
+
+  test("Hypochondriac starts with 2 medkits", () => {
+    const state = withTraits(["hypochondriac"]);
+    expect(state.protagonist.inventory.medkit).toBe(2);
+  });
+
+  test("Resourceful starts with 1 flashbang and an extra medkit at the start tile", () => {
+    const state = withTraits(["resourceful"]);
+    expect(state.protagonist.inventory.flashbang).toBe(1);
+    const itemsAtStart = state.itemsOnMap.filter(
+      (i) =>
+        i.position.col === state.map.start.col &&
+        i.position.row === state.map.start.row,
+    );
+    expect(itemsAtStart.some((i) => i.kind === "medkit")).toBe(true);
+  });
+
+  test("Hypochondriac penalty flags reset on transitionToDay2", () => {
+    let state = withTraits(["hypochondriac"]);
+    state = {
+      ...state,
+      protagonist: {
+        ...state.protagonist,
+        hypochondriacPenaltyPending: true,
+        hypochondriacTriggeredThisMap: true,
+      },
+    };
+    const next = transitionToDay2(state, "stairwell");
+    expect(next.protagonist.hypochondriacPenaltyPending).toBe(false);
+    expect(next.protagonist.hypochondriacTriggeredThisMap).toBe(false);
+  });
+});
+
+describe("Traits — Athletic gate enforcement (spec 0013)", () => {
+  function withGatedExitMap(traits: TraitId[]): RunState {
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits,
+    });
+    // Drop a fire-escape exit one tile east of the protagonist, in
+    // place of a floor tile, so commitMove can target it directly.
+    const tiles = base.map.tiles.map((row) => row.slice());
+    const target = {
+      col: base.protagonist.position.col + 1,
+      row: base.protagonist.position.row,
+    };
+    tiles[target.row][target.col] = {
+      kind: "exit",
+      exitType: "fire-escape",
+      traitGate: "athletic",
+    };
+    return {
+      ...base,
+      map: { ...base.map, tiles },
+    };
+  }
+
+  test("commitMove rejects with 'gated' when no Athletic and target is fire-escape", () => {
+    const state = withGatedExitMap([]);
+    const target = {
+      col: state.protagonist.position.col + 1,
+      row: state.protagonist.position.row,
+    };
+    const result = commitMove(state, target);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.reason).toBe("gated");
+  });
+
+  test("commitMove succeeds onto the same fire-escape with Athletic", () => {
+    const state = withGatedExitMap(["athletic"]);
+    const target = {
+      col: state.protagonist.position.col + 1,
+      row: state.protagonist.position.row,
+    };
+    const result = commitMove(state, target);
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("Traits — Hypochondriac penalty cycle (spec 0013)", () => {
+  test("damage arms pending; advanceTurn(enemy→player) consumes; second damage same map does not re-arm", () => {
+    let state = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits: ["hypochondriac"],
+    });
+    // Manually arm via direct field set — combat.ts arming is covered
+    // separately in combat.test.ts; this test isolates the cycle.
+    state = {
+      ...state,
+      protagonist: {
+        ...state.protagonist,
+        hypochondriacPenaltyPending: true,
+      },
+    };
+    // Walk the state through the enemy/player cycle.
+    const enemyPhase = advanceTurn(state); // player → enemy
+    expect(enemyPhase.protagonist.hypochondriacPenaltyPending).toBe(true);
+    const back = advanceTurn(enemyPhase); // enemy → player; consume
+    expect(back.protagonist.hypochondriacPenaltyPending).toBe(false);
+    expect(back.protagonist.hypochondriacTriggeredThisMap).toBe(true);
+    expect(back.protagonist.currentAP).toBe(back.protagonist.maxAP - 1);
+    // Re-arm attempt: the trait check in combat.ts gates on
+    // `triggeredThisMap`. Setting pending here directly does not
+    // simulate that gate, so we just confirm `triggeredThisMap`
+    // stays sticky across another cycle.
+    const again = advanceTurn(advanceTurn(back));
+    expect(again.protagonist.hypochondriacTriggeredThisMap).toBe(true);
+  });
+});
+
+describe("Traits — Vigilant medkit block (spec 0013)", () => {
+  test("useMedkit rejects with 'trait-blocked' when Vigilant is active", () => {
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits: ["vigilant"],
+    });
+    // Damage the protagonist so 'at-full-hp' isn't the rejection reason.
+    const state = {
+      ...base,
+      protagonist: { ...base.protagonist, currentHP: 1 },
+    };
+    const result = useMedkit(state);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.reason).toBe("trait-blocked");
+  });
+
+  test("useMedkit succeeds without Vigilant under the same conditions", () => {
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits: ["athletic"],
+    });
+    const state = {
+      ...base,
+      protagonist: { ...base.protagonist, currentHP: 1 },
+    };
+    const result = useMedkit(state);
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("createRunState passes traits through (spec 0013)", () => {
+  test("createRunState({ seed, traits }) carries traits onto the resulting RunState", () => {
+    const state = createRunState({
+      seed: 999,
+      traits: ["athletic", "vigilant"],
+    });
+    expect(state.traits).toEqual(["athletic", "vigilant"]);
   });
 });

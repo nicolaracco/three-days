@@ -13,12 +13,16 @@
  * plus the `transitionToDay2` and `checkRunEnd` reducers. Day-2 maps are
  * handcrafted and reuse the `Day1Map` shape — the slight name mismatch
  * is deliberate scope discipline.
+ *
+ * Spec 0013 adds `traits` (selected at run start) and the per-protagonist
+ * trait state used by Hypochondriac (the once-per-map AP penalty after
+ * damage).
  */
 
 import balance from "../data/balance.json";
 import { type Enemy, loadDay1Enemies } from "./enemy";
 import type { TilePos } from "./grid";
-import { type Inventory, type Item, EMPTY_INVENTORY } from "./item";
+import type { Inventory, Item } from "./item";
 import {
   type Day1Map,
   type Day2MapKey,
@@ -28,6 +32,7 @@ import {
 import { bfs } from "./pathfind";
 import { generateMap } from "./procgen";
 import { createRng, type Rng } from "./rng";
+import type { TraitId } from "./trait";
 
 export type ActiveTurn = "player" | "enemy";
 
@@ -49,6 +54,16 @@ export interface RunState {
     maxHP: number;
     weaponId: string;
     inventory: Inventory;
+    /**
+     * Spec 0013 — Hypochondriac penalty state. `pending` arms when
+     * the protagonist takes damage in this map (and the trait is
+     * active and not yet triggered this map); consumed by
+     * `advanceTurn(enemy → player)` which deducts 1 AP from the
+     * refilled value. `triggeredThisMap` ensures the penalty fires
+     * exactly once per map. Both reset on map entry.
+     */
+    hypochondriacPenaltyPending: boolean;
+    hypochondriacTriggeredThisMap: boolean;
   };
   enemies: Enemy[];
   itemsOnMap: Item[];
@@ -56,6 +71,8 @@ export interface RunState {
   map: Day1Map;
   seed: number;
   turn: number;
+  /** Spec 0013 — traits selected at run start. Always length 2. */
+  traits: TraitId[];
   /** Spec 0011 — `1` for procgen Day-1, `2` after `transitionToDay2`. */
   currentDay: 1 | 2;
   /** Spec 0011 — set when the day chain fires; `null` on Day 1. */
@@ -74,7 +91,7 @@ export interface RunState {
  */
 export type CommitMoveResult =
   | { ok: true; state: RunState; path: TilePos[] }
-  | { ok: false; reason: "insufficient-ap" | "off-map" };
+  | { ok: false; reason: "insufficient-ap" | "off-map" | "gated" };
 
 /**
  * Build a fresh `RunState` from an explicit `map` and `enemies`.
@@ -88,19 +105,36 @@ export function createRunStateFromMap(opts: {
   map: Day1Map;
   enemies?: Enemy[];
   itemsOnMap?: Item[];
+  /** Spec 0013 — selected traits. Defaults to empty (test fixtures). */
+  traits?: TraitId[];
 }): RunState {
+  const traits = opts.traits ?? [];
+  const inventory = startingInventoryForTraits(traits);
+  // Spec 0013: baseline starting medkits = 1 per GDD §6.2 (Hypochondriac
+  // says "instead of 1"); resourceful adds an extra medkit at the start
+  // tile rather than to inventory.
+  const itemsOnMap = (opts.itemsOnMap ?? opts.map.itemsOnMap.slice()).slice();
+  if (traits.includes("resourceful")) {
+    itemsOnMap.push({ kind: "medkit", position: opts.map.start });
+  }
+  // Athletic — +1 AP on the first turn of each map.
+  const startingAP = traits.includes("athletic")
+    ? balance.MAX_AP + 1
+    : balance.MAX_AP;
   return {
     protagonist: {
       position: opts.map.start,
-      currentAP: balance.MAX_AP,
+      currentAP: startingAP,
       maxAP: balance.MAX_AP,
       currentHP: balance.PROTAGONIST_HP,
       maxHP: balance.PROTAGONIST_HP,
       weaponId: "improvised-melee",
-      inventory: { ...EMPTY_INVENTORY },
+      inventory,
+      hypochondriacPenaltyPending: false,
+      hypochondriacTriggeredThisMap: false,
     },
     enemies: opts.enemies ?? loadDay1Enemies(),
-    itemsOnMap: opts.itemsOnMap ?? opts.map.itemsOnMap.slice(),
+    itemsOnMap,
     activeTurn: "player",
     map: opts.map,
     seed: opts.seed,
@@ -108,6 +142,19 @@ export function createRunStateFromMap(opts: {
     currentDay: 1,
     day2MapKey: null,
     runEnd: null,
+    traits,
+  };
+}
+
+/**
+ * Spec 0013 — derive the starting inventory from active traits.
+ * Baseline: 1 medkit, 0 flashbang per GDD §6.2's implicit "instead of 1"
+ * wording. Hypochondriac sets medkit = 2; Resourceful adds 1 flashbang.
+ */
+function startingInventoryForTraits(traits: TraitId[]): Inventory {
+  return {
+    medkit: traits.includes("hypochondriac") ? 2 : 1,
+    flashbang: traits.includes("resourceful") ? 1 : 0,
   };
 }
 
@@ -116,11 +163,19 @@ export function createRunStateFromMap(opts: {
  * the seed: same seed produces the same map and enemy positions. The
  * runtime entry point — used by `RunScene.create`.
  */
-export function createRunState(opts: { seed: number }): RunState {
+export function createRunState(opts: {
+  seed: number;
+  traits?: TraitId[];
+}): RunState {
   const rng = createRng(opts.seed);
   const map = generateMap(rng);
   const enemies = assignSpawnSlots(loadDay1Enemies(), map, rng);
-  return createRunStateFromMap({ seed: opts.seed, map, enemies });
+  return createRunStateFromMap({
+    seed: opts.seed,
+    map,
+    enemies,
+    traits: opts.traits,
+  });
 }
 
 /**
@@ -189,6 +244,19 @@ export function commitMove(state: RunState, target: TilePos): CommitMoveResult {
   if (cost > state.protagonist.currentAP) {
     return { ok: false, reason: "insufficient-ap" };
   }
+  // Spec 0013: Athletic-gated exits reject moves whose path crosses
+  // (or ends on) a fire-escape tile when the trait isn't active.
+  // Walls have already filtered the BFS; only exit tiles can carry a
+  // gate. Check every tile along the path, not just the destination,
+  // so the player can't sneak through a gate by overshooting.
+  if (!state.traits.includes("athletic")) {
+    for (const t of path) {
+      const tile = state.map.tiles[t.row]?.[t.col];
+      if (tile && tile.kind === "exit" && tile.traitGate === "athletic") {
+        return { ok: false, reason: "gated" };
+      }
+    }
+  }
   return {
     ok: true,
     state: {
@@ -225,13 +293,24 @@ export function advanceTurn(state: RunState): RunState {
       enemies: state.enemies.map((e) => ({ ...e, currentAP: e.maxAP })),
     };
   }
+  // Enemy → player. Spec 0013: if the Hypochondriac penalty was armed
+  // by damage taken this map, consume it now (refill AP to maxAP - 1
+  // instead of maxAP). Mark `triggeredThisMap` so further damage in
+  // the same map doesn't re-arm.
+  const consumePenalty = state.protagonist.hypochondriacPenaltyPending;
+  const refilledAP = consumePenalty
+    ? Math.max(0, state.protagonist.maxAP - 1)
+    : state.protagonist.maxAP;
   return {
     ...state,
     activeTurn: "player",
     turn: state.turn + 1,
     protagonist: {
       ...state.protagonist,
-      currentAP: state.protagonist.maxAP,
+      currentAP: refilledAP,
+      hypochondriacPenaltyPending: false,
+      hypochondriacTriggeredThisMap:
+        state.protagonist.hypochondriacTriggeredThisMap || consumePenalty,
     },
   };
 }
@@ -241,15 +320,19 @@ export function advanceTurn(state: RunState): RunState {
 /**
  * Tagged result for `useMedkit` / `useFlashbang`. The reasons are
  * disjoint per item:
- *   - `useMedkit`: `"no-item" | "insufficient-ap" | "at-full-hp"`
+ *   - `useMedkit`: `"no-item" | "insufficient-ap" | "at-full-hp" | "trait-blocked"`
  *   - `useFlashbang`: `"no-item" | "insufficient-ap"`
  *
- * Captured in a single union for ergonomics; callers narrow on `ok`
- * and on the specific reason as needed.
+ * The `"trait-blocked"` reason fires when Vigilant is active per spec 0013
+ * (cannot heal mid-map). Captured in a single union for ergonomics;
+ * callers narrow on `ok` and on the specific reason as needed.
  */
 export type UseItemResult =
   | { ok: true; state: RunState; stunned: number }
-  | { ok: false; reason: "no-item" | "insufficient-ap" | "at-full-hp" };
+  | {
+      ok: false;
+      reason: "no-item" | "insufficient-ap" | "at-full-hp" | "trait-blocked";
+    };
 
 /**
  * Heal the protagonist by `ITEM_MEDKIT_HEAL` (capped at `maxHP`),
@@ -259,6 +342,11 @@ export type UseItemResult =
  */
 export function useMedkit(state: RunState): UseItemResult {
   const p = state.protagonist;
+  // Spec 0013: Vigilant cannot heal mid-map. Reject before any other
+  // check so the trait's gameplay rule reads as the headline reason.
+  if (state.traits.includes("vigilant")) {
+    return { ok: false, reason: "trait-blocked" };
+  }
   if (p.inventory.medkit <= 0) return { ok: false, reason: "no-item" };
   if (p.currentAP < balance.USE_ITEM_AP_COST) {
     return { ok: false, reason: "insufficient-ap" };
@@ -334,11 +422,21 @@ export function transitionToDay2(
 ): RunState {
   const key: Day2MapKey = exitType === "stairwell" ? "lobby" : "rooftop";
   const bundle = loadDay2Map(key);
+  // Spec 0013: trait-derived map-entry effects fire again on Day 2 —
+  // Athletic's +1 AP applies to the first turn of THIS map; Resourceful
+  // adds another medkit at the Day-2 start tile; Hypochondriac flags
+  // reset so the penalty can fire once on this map too.
+  const athletic = state.traits.includes("athletic");
+  const resourceful = state.traits.includes("resourceful");
+  const itemsOnMap = bundle.map.itemsOnMap.slice();
+  if (resourceful) {
+    itemsOnMap.push({ kind: "medkit", position: bundle.map.start });
+  }
   return {
     ...state,
     map: bundle.map,
     enemies: bundle.enemies,
-    itemsOnMap: bundle.map.itemsOnMap.slice(),
+    itemsOnMap,
     activeTurn: "player",
     turn: 1,
     currentDay: 2,
@@ -347,7 +445,11 @@ export function transitionToDay2(
     protagonist: {
       ...state.protagonist,
       position: bundle.map.start,
-      currentAP: state.protagonist.maxAP,
+      currentAP: athletic
+        ? state.protagonist.maxAP + 1
+        : state.protagonist.maxAP,
+      hypochondriacPenaltyPending: false,
+      hypochondriacTriggeredThisMap: false,
       // currentHP and inventory carry forward — players keep what they earned.
     },
   };

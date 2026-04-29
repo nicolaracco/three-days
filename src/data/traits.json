@@ -1,0 +1,27 @@
+[
+  {
+    "id": "athletic",
+    "name": "Athletic",
+    "description": "Can use the fire-escape exit. +1 AP on the first turn of each map."
+  },
+  {
+    "id": "hypochondriac",
+    "name": "Hypochondriac",
+    "description": "Starts with 2 medkits instead of 1. Loses 1 AP on the first turn after taking damage in each map."
+  },
+  {
+    "id": "vigilant",
+    "name": "Vigilant",
+    "description": "Sees enemy line-of-sight tiles. Cannot heal mid-map."
+  },
+  {
+    "id": "resourceful",
+    "name": "Resourceful",
+    "description": "Starts with 1 flashbang. The starting tile carries an extra medkit."
+  },
+  {
+    "id": "marksman",
+    "name": "Marksman",
+    "description": "Pistol shots cost 1 less AP. Cannot wield shotguns. (No effect yet — pending player ranged weapons.)"
+  }
+]

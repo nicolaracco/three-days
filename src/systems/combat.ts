@@ -147,6 +147,18 @@ export function commitAttack(
     const newHP = nextProtagonist.currentHP - damage;
     nextProtagonist = { ...nextProtagonist, currentHP: newHP };
     killed = newHP <= 0;
+    // Spec 0013: Hypochondriac arms the once-per-map AP penalty on
+    // first damage taken. If already triggered this map, no re-arm.
+    if (
+      damage > 0 &&
+      state.traits.includes("hypochondriac") &&
+      !nextProtagonist.hypochondriacTriggeredThisMap
+    ) {
+      nextProtagonist = {
+        ...nextProtagonist,
+        hypochondriacPenaltyPending: true,
+      };
+    }
   } else {
     const targetIndex = nextEnemies.findIndex((e) => e.id === params.targetId);
     if (targetIndex === -1) return { ok: false, reason: "no-target" };
