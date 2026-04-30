@@ -1202,12 +1202,15 @@ export class RunScene extends Phaser.Scene {
         this.selection.kind === "enemy" &&
         this.selection.id === this.staged.targetId
       ) {
-        const target = this.state.enemies.find(
-          (e) => e.id === (this.staged as { targetId: string }).targetId,
-        );
-        const tier = target ? this.tierForPistolShotAt(target.position) : null;
-        const label = tier ? `Confirm Pistol — ${tier}` : "Confirm Pistol";
-        return [{ mode: "confirm-pistol", label, fill: COLOR.buttonBgAttack }];
+        // Spec 0015: tier read from the halo + label-below-target.
+        // Button label stays short to fit the 132 px slot.
+        return [
+          {
+            mode: "confirm-pistol",
+            label: "Confirm Pistol",
+            fill: COLOR.buttonBgAttack,
+          },
+        ];
       }
       return [];
     }
@@ -1222,7 +1225,7 @@ export class RunScene extends Phaser.Scene {
       return [
         {
           mode: "confirm-reload",
-          label: `Confirm Reload (${balance.RELOAD_AP_COST} AP)`,
+          label: "Confirm Reload",
           fill: COLOR.buttonBg,
         },
       ];
@@ -1253,15 +1256,17 @@ export class RunScene extends Phaser.Scene {
             this.state.map,
           );
         if (canMelee && canPistol) {
+          // Two-button mode: 62 px slots fit ~8 chars at the 13 px
+          // font picked in `refreshActionButton`. AP cost goes in the
+          // label as a single digit; tier is read from the halo.
           slots.push({
             mode: "stage-attack",
-            label: `Melee (${balance.ATTACK_AP_COST})`,
+            label: `Melee ${balance.ATTACK_AP_COST}`,
             fill: COLOR.buttonBgAttack,
           });
-          const tier = this.tierForPistolShotAt(target.position);
           slots.push({
             mode: "stage-pistol",
-            label: `Pistol ${tier ? `(${pistolCost}) ${tier}` : `(${pistolCost})`}`,
+            label: `Pistol ${pistolCost}`,
             fill: COLOR.buttonBgAttack,
           });
         } else if (canMelee) {
@@ -1271,12 +1276,11 @@ export class RunScene extends Phaser.Scene {
             fill: COLOR.buttonBgAttack,
           });
         } else if (canPistol) {
-          const tier = this.tierForPistolShotAt(target.position);
+          // Single-button slot at 132 px / 16 px: drop the tier word —
+          // the projected halo + label-below-target carries it.
           slots.push({
             mode: "stage-pistol",
-            label: tier
-              ? `Pistol (${pistolCost} AP) — ${tier}`
-              : `Pistol (${pistolCost} AP)`,
+            label: `Pistol (${pistolCost} AP)`,
             fill: COLOR.buttonBgAttack,
           });
         }
@@ -1313,9 +1317,11 @@ export class RunScene extends Phaser.Scene {
       if (canMedkit && slots.length < 2) {
         slots.push({
           mode: "stage-medkit",
+          // Trimmed to fit: "Use Medkit (1 AP)" overflowed the 132 px
+          // single-button slot at 16 px font.
           label:
             slots.length === 0
-              ? `Use Medkit (${balance.USE_ITEM_AP_COST} AP)`
+              ? `Medkit (${balance.USE_ITEM_AP_COST} AP)`
               : `Med ×${inv.medkit}`,
           fill: COLOR.buttonBg,
         });
@@ -1325,7 +1331,7 @@ export class RunScene extends Phaser.Scene {
           mode: "stage-flashbang",
           label:
             slots.length === 0
-              ? `Use Flashbang (${balance.USE_ITEM_AP_COST} AP)`
+              ? `Flash (${balance.USE_ITEM_AP_COST} AP)`
               : `Flash ×${inv.flashbang}`,
           fill: COLOR.buttonBg,
         });
@@ -1333,23 +1339,6 @@ export class RunScene extends Phaser.Scene {
       return slots;
     }
     return [];
-  }
-
-  /**
-   * Spec 0015 — compute the qualitative hit-chance tier the player
-   * would face firing the pistol at `target` from their current
-   * position. Returns `null` if the shot isn't viable (no LoS).
-   */
-  private tierForPistolShotAt(target: TilePos): HitChance | null {
-    const from = this.state.protagonist.position;
-    if (!hasLoS(from, target, this.state.map)) return null;
-    const cover = coverBetween(from, target, this.state.map);
-    return hitChance({
-      attacker: from,
-      target,
-      weaponRange: 99,
-      cover,
-    });
   }
 
   // ----- Input handling -----
