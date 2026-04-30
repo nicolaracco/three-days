@@ -23,6 +23,7 @@ import type { TilePos } from "./grid";
 import { hasLoS } from "./los";
 import { nextRoll01 } from "./rng";
 import type { RunState } from "./run-state";
+import { pistolApCost } from "./run-state";
 import { getWeapon } from "./weapon";
 
 export interface AttackParams {
@@ -41,7 +42,8 @@ type AttackFailure = {
     | "insufficient-ap"
     | "no-weapon"
     | "no-target"
-    | "no-line-of-sight";
+    | "no-line-of-sight"
+    | "no-ammo";
 };
 
 export type AttackResult = { ok: true; damage: number } | AttackFailure;
@@ -98,8 +100,25 @@ export function attackResult(
   const target = resolveTarget(state, params.targetId);
   if (!target) return { ok: false, reason: "no-target" };
 
-  if (attacker.currentAP < weapon.apCost) {
+  // Spec 0015: when the player fires the pistol, the effective AP cost
+  // is `pistolApCost(state.traits)` (Marksman → 1, default → 2). Other
+  // weapons use the JSON-declared cost directly.
+  const effectiveApCost =
+    params.attackerSide === "player" && params.weaponId === "pistol"
+      ? pistolApCost(state.traits)
+      : weapon.apCost;
+  if (attacker.currentAP < effectiveApCost) {
     return { ok: false, reason: "insufficient-ap" };
+  }
+
+  // Spec 0015: pistol shots require ammo. Other weapons (melee +
+  // alien-pistol) are unmetered.
+  if (
+    params.attackerSide === "player" &&
+    params.weaponId === "pistol" &&
+    state.protagonist.pistolAmmo <= 0
+  ) {
+    return { ok: false, reason: "no-ammo" };
   }
 
   const dist =
@@ -173,15 +192,29 @@ export function commitAttack(
   let killed = false;
 
   // Attacker AP deduction (always — miss still spends AP).
+  // Spec 0015: player pistol shots use `pistolApCost(traits)` (Marksman
+  // discount); melee + enemy weapons use the JSON-declared cost.
+  const apCost =
+    params.attackerSide === "player" && params.weaponId === "pistol"
+      ? pistolApCost(state.traits)
+      : weapon.apCost;
   if (params.attackerSide === "player") {
     nextProtagonist = {
       ...nextProtagonist,
-      currentAP: nextProtagonist.currentAP - weapon.apCost,
+      currentAP: nextProtagonist.currentAP - apCost,
     };
+    // Spec 0015: player pistol shots consume one round on every commit
+    // (hit or miss), parity with AP and rngState propagation.
+    if (params.weaponId === "pistol") {
+      nextProtagonist = {
+        ...nextProtagonist,
+        pistolAmmo: nextProtagonist.pistolAmmo - 1,
+      };
+    }
   } else {
     nextEnemies = nextEnemies.map((e) =>
       e.id === params.attackerId
-        ? { ...e, currentAP: e.currentAP - weapon.apCost }
+        ? { ...e, currentAP: e.currentAP - apCost }
         : e,
     );
   }

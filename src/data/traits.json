@@ -22,6 +22,6 @@
   {
     "id": "marksman",
     "name": "Marksman",
-    "description": "Pistol shots cost 1 less AP. Cannot wield shotguns. (No effect yet — pending player ranged weapons.)"
+    "description": "Pistol shots cost 1 less AP. Cannot wield shotguns."
   }
 ]

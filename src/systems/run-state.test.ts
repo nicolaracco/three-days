@@ -10,6 +10,8 @@ import {
   commitMove,
   createRunState,
   createRunStateFromMap,
+  pistolApCost,
+  reloadPistol,
   transitionToDay2,
   useFlashbang,
   useMedkit,
@@ -671,5 +673,119 @@ describe("createRunState passes traits through (spec 0013)", () => {
       traits: ["athletic", "vigilant"],
     });
     expect(state.traits).toEqual(["athletic", "vigilant"]);
+  });
+});
+
+describe("Pistol starting state (spec 0015)", () => {
+  function withTraits(traits: TraitId[]): RunState {
+    return createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits,
+    });
+  }
+
+  test("default run starts with 1 magazine and a full chamber", () => {
+    const state = withTraits([]);
+    expect(state.protagonist.pistolAmmo).toBe(balance.PISTOL_MAG_SIZE);
+    expect(state.protagonist.pistolMagazines).toBe(1);
+  });
+
+  test("Resourceful adds an extra starting magazine", () => {
+    const state = withTraits(["resourceful"]);
+    expect(state.protagonist.pistolMagazines).toBe(2);
+  });
+
+  test("Day-2 transition does NOT refill ammo (carry-forward)", () => {
+    let state = withTraits(["resourceful"]);
+    state = {
+      ...state,
+      protagonist: {
+        ...state.protagonist,
+        pistolAmmo: 2,
+        pistolMagazines: 1,
+      },
+    };
+    const next = transitionToDay2(state, "stairwell");
+    expect(next.protagonist.pistolAmmo).toBe(2);
+    expect(next.protagonist.pistolMagazines).toBe(1);
+  });
+});
+
+describe("pistolApCost (spec 0015)", () => {
+  test("default = 2 (matches ATTACK_AP_COST baseline)", () => {
+    expect(pistolApCost([])).toBe(balance.ATTACK_AP_COST);
+  });
+
+  test("Marksman discounts to 1", () => {
+    expect(pistolApCost(["marksman"])).toBe(1);
+  });
+});
+
+describe("reloadPistol (spec 0015)", () => {
+  function emptyChamber(): RunState {
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits: [],
+    });
+    return {
+      ...base,
+      protagonist: { ...base.protagonist, pistolAmmo: 0 },
+    };
+  }
+
+  test("happy path: refills, decrements magazines, deducts AP", () => {
+    const state = emptyChamber();
+    const result = reloadPistol(state);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.state.protagonist.pistolAmmo).toBe(balance.PISTOL_MAG_SIZE);
+    expect(result.state.protagonist.pistolMagazines).toBe(
+      state.protagonist.pistolMagazines - 1,
+    );
+    expect(result.state.protagonist.currentAP).toBe(
+      state.protagonist.currentAP - balance.RELOAD_AP_COST,
+    );
+  });
+
+  test("rejects 'no-magazines' when magazines is 0", () => {
+    const base = emptyChamber();
+    const state = {
+      ...base,
+      protagonist: { ...base.protagonist, pistolMagazines: 0 },
+    };
+    const result = reloadPistol(state);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.reason).toBe("no-magazines");
+  });
+
+  test("rejects 'insufficient-ap' when AP < RELOAD_AP_COST", () => {
+    const base = emptyChamber();
+    const state = {
+      ...base,
+      protagonist: { ...base.protagonist, currentAP: 0 },
+    };
+    const result = reloadPistol(state);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.reason).toBe("insufficient-ap");
+  });
+
+  test("rejects 'already-full' when chamber is at max", () => {
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits: [],
+    });
+    // Default starts at PISTOL_MAG_SIZE — already full.
+    const result = reloadPistol(base);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.reason).toBe("already-full");
   });
 });

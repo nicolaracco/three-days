@@ -29,6 +29,7 @@ import balance from "../data/balance.json";
 import viewport from "../data/viewport.json";
 import type { Enemy } from "../systems/enemy";
 import { commitAttack } from "../systems/combat";
+import { type HitChance, coverBetween, hitChance } from "../systems/cover";
 import {
   type GridConfig,
   type TilePos,
@@ -48,6 +49,8 @@ import {
   commitMove,
   createRunState,
   enemyTiles,
+  pistolApCost,
+  reloadPistol,
   transitionToDay2,
   useFlashbang,
   useMedkit,
@@ -116,6 +119,22 @@ const EXIT_TITLE: Record<ExitTile["exitType"], string> = {
   "fire-escape": "Exit — Fire-escape",
 };
 
+/** Spec 0015 — tier-coded colors for the projected attack halos. */
+const TIER_COLOR: Record<HitChance, number> = {
+  certain: 0x6abf6a, // green (hpBarFg family)
+  probable: 0xffffff, // white (text)
+  risky: 0xffd166, // yellow (apLabel / stagedHaloStroke)
+  unlikely: 0xe57373, // red (enemyMelee family)
+};
+
+/** Spec 0015 — tier-coded color strings for label text. */
+const TIER_COLOR_TEXT: Record<HitChance, string> = {
+  certain: "#6abf6a",
+  probable: "#ffffff",
+  risky: "#ffd166",
+  unlikely: "#e57373",
+};
+
 function tileFillColor(tile: { kind: "floor" | "wall" } | ExitTile): number {
   switch (tile.kind) {
     case "floor":
@@ -137,16 +156,22 @@ type Selection =
 type Staged =
   | { kind: "move"; pos: TilePos }
   | { kind: "attack"; targetId: string }
-  | { kind: "use-item"; itemKind: ItemKind };
+  | { kind: "attack-pistol"; targetId: string }
+  | { kind: "use-item"; itemKind: ItemKind }
+  | { kind: "reload" };
 
 type ActionMode =
   | "confirm-move"
   | "confirm-attack"
   | "stage-attack"
+  | "stage-pistol"
+  | "confirm-pistol"
   | "stage-medkit"
   | "stage-flashbang"
   | "confirm-medkit"
   | "confirm-flashbang"
+  | "stage-reload"
+  | "confirm-reload"
   | "hidden";
 
 interface ActionSlot {
@@ -183,6 +208,13 @@ export class RunScene extends Phaser.Scene {
    * track enemy movement and death without bookkeeping.
    */
   private losConesLayer!: Phaser.GameObjects.Container;
+  /**
+   * Spec 0015 — projected hit-chance halos on every enemy the player
+   * can shoot this turn. Container holds a ring + tier-label pair per
+   * eligible target. Cleared and rebuilt on every state-affecting
+   * refresh; skipped entirely when the pistol is unavailable.
+   */
+  private attackHalosLayer!: Phaser.GameObjects.Container;
   private protagonistSprite!: Phaser.GameObjects.Arc;
   private protagonistHpBar!: HpBar;
   /**
@@ -300,6 +332,7 @@ export class RunScene extends Phaser.Scene {
 
     this.renderMap();
     this.losConesLayer = this.add.container(0, 0);
+    this.attackHalosLayer = this.add.container(0, 0);
     this.targetingLayer = this.add.container(0, 0);
     this.stagedLayer = this.add.container(0, 0);
     this.itemsLayer = this.add.container(0, 0);
@@ -664,6 +697,7 @@ export class RunScene extends Phaser.Scene {
 
   private refreshAll(): void {
     this.refreshLosCones();
+    this.refreshAttackHalos();
     this.refreshTargeting();
     this.refreshHpBars();
     this.refreshHUD();
@@ -705,6 +739,49 @@ export class RunScene extends Phaser.Scene {
           this.losConesLayer.add(overlay);
         }
       }
+    }
+  }
+
+  /**
+   * Spec 0015 — render hit-chance halos + tier labels on every enemy
+   * the player can shoot this turn. Skipped entirely when the pistol
+   * isn't actionable (no AP, no ammo, enemy turn, animating, run
+   * ended). Halos are rebuilt on every refresh so they track enemy
+   * movement, ammo depletion, AP changes, and deaths.
+   */
+  private refreshAttackHalos(): void {
+    this.attackHalosLayer.removeAll(true);
+    const p = this.state.protagonist;
+    if (this.state.activeTurn !== "player") return;
+    if (this.state.runEnd !== null) return;
+    if (p.currentHP <= 0) return;
+    if (this.isAnimating) return;
+    if (p.pistolAmmo <= 0) return;
+    if (p.currentAP < pistolApCost(this.state.traits)) return;
+    for (const enemy of this.state.enemies) {
+      if (!hasLoS(p.position, enemy.position, this.state.map)) continue;
+      const cover = coverBetween(p.position, enemy.position, this.state.map);
+      const tier = hitChance({
+        attacker: p.position,
+        target: enemy.position,
+        weaponRange: 99,
+        cover,
+      });
+      const px = tileToPixel(enemy.position, this.gridCfg);
+      const cx = px.x + TILE_SIZE / 2;
+      const cy = px.y + TILE_SIZE / 2;
+      const ring = this.add
+        .circle(cx, cy, TILE_SIZE / 2 - 2)
+        .setStrokeStyle(2, TIER_COLOR[tier])
+        .setFillStyle(0x000000, 0);
+      const label = this.add
+        .text(cx, px.y + TILE_SIZE + 1, tier, {
+          fontFamily: "monospace",
+          fontSize: "10px",
+          color: TIER_COLOR_TEXT[tier],
+        })
+        .setOrigin(0.5, 0);
+      this.attackHalosLayer.add([ring, label]);
     }
   }
 
@@ -786,22 +863,23 @@ export class RunScene extends Phaser.Scene {
     const staged = this.staged;
     if (!staged) return null;
     if (staged.kind === "move") return staged.pos;
-    if (staged.kind === "attack") {
+    if (staged.kind === "attack" || staged.kind === "attack-pistol") {
       const e = this.state.enemies.find((x) => x.id === staged.targetId);
       return e?.position ?? null;
     }
-    // "use-item" — self-targeted, no halo tile.
+    // "use-item" / "reload" — self-targeted, no halo tile.
     return null;
   }
 
   private refreshHUD(): void {
     this.turnText.setText(`T${this.state.turn}`);
+    // Spec 0015: ammo readout colocated with AP. Compact form:
+    // "AP 4/4 · P 6/6 M1" — shows current pistol ammo + magazines.
+    const p = this.state.protagonist;
     this.apText.setText(
-      `AP ${this.state.protagonist.currentAP}/${this.state.protagonist.maxAP}`,
+      `AP ${p.currentAP}/${p.maxAP} · P ${p.pistolAmmo}/${balance.PISTOL_MAG_SIZE} M${p.pistolMagazines}`,
     );
-    this.hpText.setText(
-      `HP ${Math.max(0, this.state.protagonist.currentHP)}/${this.state.protagonist.maxHP}`,
-    );
+    this.hpText.setText(`HP ${Math.max(0, p.currentHP)}/${p.maxHP}`);
   }
 
   private refreshTurnIndicator(): void {
@@ -1119,6 +1197,20 @@ export class RunScene extends Phaser.Scene {
       }
       return [];
     }
+    if (this.staged?.kind === "attack-pistol") {
+      if (
+        this.selection.kind === "enemy" &&
+        this.selection.id === this.staged.targetId
+      ) {
+        const target = this.state.enemies.find(
+          (e) => e.id === (this.staged as { targetId: string }).targetId,
+        );
+        const tier = target ? this.tierForPistolShotAt(target.position) : null;
+        const label = tier ? `Confirm Pistol — ${tier}` : "Confirm Pistol";
+        return [{ mode: "confirm-pistol", label, fill: COLOR.buttonBgAttack }];
+      }
+      return [];
+    }
     if (this.staged?.kind === "use-item") {
       const itemKind = this.staged.itemKind;
       const label = itemKind === "medkit" ? "Confirm Medkit" : "Confirm Flash";
@@ -1126,70 +1218,138 @@ export class RunScene extends Phaser.Scene {
         itemKind === "medkit" ? "confirm-medkit" : "confirm-flashbang";
       return [{ mode, label, fill: COLOR.buttonBg }];
     }
-    // No stage. Prefer adjacent-enemy attack stage if applicable.
+    if (this.staged?.kind === "reload") {
+      return [
+        {
+          mode: "confirm-reload",
+          label: `Confirm Reload (${balance.RELOAD_AP_COST} AP)`,
+          fill: COLOR.buttonBg,
+        },
+      ];
+    }
+    // No stage. Prefer enemy-targeted attack staging if applicable.
+    // Spec 0015: an enemy can be a melee target (adjacent + AP) or a
+    // pistol target (LoS + AP + ammo) or both — surface up to two
+    // buttons in the existing two-button layout.
     if (this.selection.kind === "enemy") {
       const target = this.state.enemies.find(
         (e) => e.id === (this.selection as { id: string }).id,
       );
       if (target) {
+        const slots: ActionSlot[] = [];
         const dist =
           Math.abs(target.position.col - this.state.protagonist.position.col) +
           Math.abs(target.position.row - this.state.protagonist.position.row);
-        if (
+        const canMelee =
           dist === 1 &&
-          this.state.protagonist.currentAP >= balance.ATTACK_AP_COST
-        ) {
-          return [
-            {
-              mode: "stage-attack",
-              label: `Attack (${balance.ATTACK_AP_COST} AP)`,
-              fill: COLOR.buttonBgAttack,
-            },
-          ];
+          this.state.protagonist.currentAP >= balance.ATTACK_AP_COST;
+        const pistolCost = pistolApCost(this.state.traits);
+        const canPistol =
+          this.state.protagonist.pistolAmmo > 0 &&
+          this.state.protagonist.currentAP >= pistolCost &&
+          hasLoS(
+            this.state.protagonist.position,
+            target.position,
+            this.state.map,
+          );
+        if (canMelee && canPistol) {
+          slots.push({
+            mode: "stage-attack",
+            label: `Melee (${balance.ATTACK_AP_COST})`,
+            fill: COLOR.buttonBgAttack,
+          });
+          const tier = this.tierForPistolShotAt(target.position);
+          slots.push({
+            mode: "stage-pistol",
+            label: `Pistol ${tier ? `(${pistolCost}) ${tier}` : `(${pistolCost})`}`,
+            fill: COLOR.buttonBgAttack,
+          });
+        } else if (canMelee) {
+          slots.push({
+            mode: "stage-attack",
+            label: `Attack (${balance.ATTACK_AP_COST} AP)`,
+            fill: COLOR.buttonBgAttack,
+          });
+        } else if (canPistol) {
+          const tier = this.tierForPistolShotAt(target.position);
+          slots.push({
+            mode: "stage-pistol",
+            label: tier
+              ? `Pistol (${pistolCost} AP) — ${tier}`
+              : `Pistol (${pistolCost} AP)`,
+            fill: COLOR.buttonBgAttack,
+          });
         }
+        if (slots.length > 0) return slots;
       }
     }
-    // Otherwise — protagonist selected and no stage — surface item-use
-    // buttons for whatever the player carries.
+    // Otherwise — protagonist selected and no stage — surface
+    // reload/item-use buttons. Reload takes priority over the second
+    // item slot when both compete, since shooting back is more
+    // critical than throwing a flashbang.
     if (this.selection.kind === "protagonist") {
       const slots: ActionSlot[] = [];
       const inv = this.state.protagonist.inventory;
+      const p = this.state.protagonist;
+      const canReload =
+        p.pistolAmmo === 0 &&
+        p.pistolMagazines > 0 &&
+        p.currentAP >= balance.RELOAD_AP_COST;
       const canMedkit =
         inv.medkit > 0 &&
-        this.state.protagonist.currentAP >= balance.USE_ITEM_AP_COST &&
-        this.state.protagonist.currentHP < this.state.protagonist.maxHP;
+        !this.state.traits.includes("vigilant") &&
+        p.currentAP >= balance.USE_ITEM_AP_COST &&
+        p.currentHP < p.maxHP;
       const canFlash =
-        inv.flashbang > 0 &&
-        this.state.protagonist.currentAP >= balance.USE_ITEM_AP_COST;
-      // Long-form labels when only one button is present; short-form when
-      // both fit. Refresh chooses the layout based on slot count.
-      if (canMedkit && canFlash) {
+        inv.flashbang > 0 && p.currentAP >= balance.USE_ITEM_AP_COST;
+      if (canReload) {
+        slots.push({
+          mode: "stage-reload",
+          label: `Reload (${balance.RELOAD_AP_COST})`,
+          fill: COLOR.buttonBg,
+        });
+      }
+      // Spec 0015: cap at 2 slots. Priority: reload > medkit > flashbang.
+      if (canMedkit && slots.length < 2) {
         slots.push({
           mode: "stage-medkit",
-          label: `Med ×${inv.medkit}`,
+          label:
+            slots.length === 0
+              ? `Use Medkit (${balance.USE_ITEM_AP_COST} AP)`
+              : `Med ×${inv.medkit}`,
           fill: COLOR.buttonBg,
         });
+      }
+      if (canFlash && slots.length < 2) {
         slots.push({
           mode: "stage-flashbang",
-          label: `Flash ×${inv.flashbang}`,
-          fill: COLOR.buttonBg,
-        });
-      } else if (canMedkit) {
-        slots.push({
-          mode: "stage-medkit",
-          label: `Use Medkit (${balance.USE_ITEM_AP_COST} AP)`,
-          fill: COLOR.buttonBg,
-        });
-      } else if (canFlash) {
-        slots.push({
-          mode: "stage-flashbang",
-          label: `Use Flashbang (${balance.USE_ITEM_AP_COST} AP)`,
+          label:
+            slots.length === 0
+              ? `Use Flashbang (${balance.USE_ITEM_AP_COST} AP)`
+              : `Flash ×${inv.flashbang}`,
           fill: COLOR.buttonBg,
         });
       }
       return slots;
     }
     return [];
+  }
+
+  /**
+   * Spec 0015 — compute the qualitative hit-chance tier the player
+   * would face firing the pistol at `target` from their current
+   * position. Returns `null` if the shot isn't viable (no LoS).
+   */
+  private tierForPistolShotAt(target: TilePos): HitChance | null {
+    const from = this.state.protagonist.position;
+    if (!hasLoS(from, target, this.state.map)) return null;
+    const cover = coverBetween(from, target, this.state.map);
+    return hitChance({
+      attacker: from,
+      target,
+      weaponRange: 99,
+      cover,
+    });
   }
 
   // ----- Input handling -----
@@ -1240,6 +1400,15 @@ export class RunScene extends Phaser.Scene {
         this.state.activeTurn === "player"
       ) {
         this.commitStagedAttack();
+        return;
+      }
+      // Spec 0015: same second-tap-commit behavior for pistol.
+      if (
+        this.staged?.kind === "attack-pistol" &&
+        this.staged.targetId === enemy.id &&
+        this.state.activeTurn === "player"
+      ) {
+        this.commitStagedPistol();
         return;
       }
       this.setSelection({ kind: "enemy", id: enemy.id });
@@ -1331,6 +1500,26 @@ export class RunScene extends Phaser.Scene {
         break;
       case "confirm-flashbang":
         this.commitUseFlashbang();
+        break;
+      case "stage-pistol":
+        if (this.selection.kind === "enemy") {
+          this.staged = {
+            kind: "attack-pistol",
+            targetId: this.selection.id,
+          };
+          this.refreshStagedHalo();
+          this.refreshActionButton();
+        }
+        break;
+      case "confirm-pistol":
+        this.commitStagedPistol();
+        break;
+      case "stage-reload":
+        this.staged = { kind: "reload" };
+        this.refreshActionButton();
+        break;
+      case "confirm-reload":
+        this.commitStagedReload();
         break;
       case "hidden":
         break;
@@ -1586,6 +1775,94 @@ export class RunScene extends Phaser.Scene {
       // Spec 0011: lobby commander death = win. The check is idempotent
       // so it's safe even if the killed enemy wasn't the commander.
       this.checkAndApplyRunEnd();
+    });
+  }
+
+  // ----- Pistol commits (spec 0015) -----
+
+  private commitStagedPistol(): void {
+    if (this.staged?.kind !== "attack-pistol") return;
+    if (this.state.activeTurn !== "player") return;
+    if (this.isAnimating) return;
+    const targetId = this.staged.targetId;
+    const targetBefore = this.state.enemies.find((e) => e.id === targetId);
+    const result = commitAttack(this.state, {
+      attackerSide: "player",
+      weaponId: "pistol",
+      targetId,
+    });
+    if (!result.ok) return;
+    this.state = result.state;
+    this.staged = null;
+    if (result.killed) {
+      this.setSelection({ kind: "protagonist" });
+    }
+    this.isAnimating = true;
+    // Always draw the shot-line from the protagonist to the target,
+    // regardless of hit/miss — same affordance as enemy ranged attacks
+    // (spec 0012).
+    if (targetBefore) {
+      this.drawShotAnimationFrom(
+        this.state.protagonist.position,
+        targetBefore.position,
+      );
+    }
+    if (result.hit) {
+      const targetSprite = this.enemySprites.get(targetId);
+      if (targetSprite) {
+        const targetEnemy = this.state.enemies.find((e) => e.id === targetId);
+        const restoreColor = targetEnemy
+          ? this.enemyFillColor(targetEnemy)
+          : COLOR.enemyMelee;
+        this.flashSprite(targetSprite, restoreColor);
+      }
+    }
+    this.refreshHpBars();
+    this.refreshEnemySprites();
+    this.refreshHUD();
+    this.refreshPanel();
+    this.time.delayedCall(FLASH_MS, () => {
+      this.isAnimating = false;
+      this.refreshAll();
+      this.checkAndApplyRunEnd();
+    });
+  }
+
+  private commitStagedReload(): void {
+    if (this.staged?.kind !== "reload") return;
+    if (this.state.activeTurn !== "player") return;
+    const result = reloadPistol(this.state);
+    if (!result.ok) {
+      // Defensive: the action button should only have surfaced when
+      // reload was viable. If it isn't, just clear the stage.
+      this.staged = null;
+      this.refreshAll();
+      return;
+    }
+    this.state = result.state;
+    this.staged = null;
+    this.refreshAll();
+  }
+
+  /**
+   * Spec 0015 — like `drawShotAnimation` (spec 0012) but the source
+   * tile is explicit. Used when the player fires the pistol so the
+   * line goes protagonist → target instead of attacker → protagonist.
+   */
+  private drawShotAnimationFrom(from: TilePos, to: TilePos): void {
+    const a = tileToPixel(from, this.gridCfg);
+    const b = tileToPixel(to, this.gridCfg);
+    const ax = a.x + TILE_SIZE / 2;
+    const ay = a.y + TILE_SIZE / 2;
+    const bx = b.x + TILE_SIZE / 2;
+    const by = b.y + TILE_SIZE / 2;
+    const line = this.add.line(0, 0, ax, ay, bx, by, COLOR.enemyMelee);
+    line.setOrigin(0, 0).setLineWidth(2);
+    this.tweens.add({
+      targets: line,
+      alpha: { from: 1, to: 0 },
+      duration: FLASH_MS,
+      onComplete: () => line.destroy(),
     });
   }
 

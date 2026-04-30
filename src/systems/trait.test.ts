@@ -24,10 +24,13 @@ describe("loadTraits", () => {
     expect(new Set(ids)).toEqual(new Set(expected));
   });
 
-  test("Marksman description includes the (no effect yet) tag", () => {
+  test("Marksman description references pistol shots and shotgun ban (spec 0015)", () => {
     const m = loadTraits().find((t) => t.id === "marksman");
     expect(m).toBeDefined();
-    expect(m!.description.toLowerCase()).toContain("no effect yet");
+    expect(m!.description.toLowerCase()).toContain("pistol");
+    // The (no effect yet) stub tag from spec 0013 is gone now that the
+    // pistol is a real weapon (spec 0015).
+    expect(m!.description.toLowerCase()).not.toContain("no effect yet");
   });
 });
 

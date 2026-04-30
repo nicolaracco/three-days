@@ -459,3 +459,95 @@ describe("commitAttack hit-chance roll path (spec 0014)", () => {
     expect(a.state.rngState).toBe(b.state.rngState);
   });
 });
+
+describe("Player pistol attacks (spec 0015)", () => {
+  function pistolFixture(traits: { has?: "marksman" } = {}): RunState {
+    const base = createRunStateFromMap({
+      seed: 1,
+      map: loadDay1Map(),
+      enemies: loadDay1Enemies(),
+      traits: traits.has === "marksman" ? ["marksman"] : [],
+    });
+    // Park the protagonist a few tiles from the static enemy so
+    // there's clear LoS but no adjacency.
+    return {
+      ...base,
+      protagonist: { ...base.protagonist, position: { col: 5, row: 5 } },
+    };
+  }
+
+  test("succeeds when ammo + AP + LoS are all good; ammo decrements; AP deducts", () => {
+    const state = pistolFixture();
+    const startingAmmo = state.protagonist.pistolAmmo;
+    const startingAP = state.protagonist.currentAP;
+    const result = commitAttack(state, {
+      attackerSide: "player",
+      weaponId: "pistol",
+      targetId: "alien-1",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.state.protagonist.pistolAmmo).toBe(startingAmmo - 1);
+    expect(result.state.protagonist.currentAP).toBe(
+      startingAP - balance.ATTACK_AP_COST,
+    );
+  });
+
+  test("rejects with 'no-ammo' when chamber is empty", () => {
+    const base = pistolFixture();
+    const state: RunState = {
+      ...base,
+      protagonist: { ...base.protagonist, pistolAmmo: 0 },
+    };
+    const result = commitAttack(state, {
+      attackerSide: "player",
+      weaponId: "pistol",
+      targetId: "alien-1",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.reason).toBe("no-ammo");
+  });
+
+  test("ammo decrements on miss too (parity with AP)", () => {
+    // Force a miss tier by interposing a cover tile + long range.
+    const base = pistolFixture();
+    const tiles = base.map.tiles.map((row) => row.slice());
+    const state: RunState = {
+      ...base,
+      protagonist: {
+        ...base.protagonist,
+        position: { col: 0, row: 11 },
+        pistolAmmo: 6,
+      },
+      rngState: 999,
+      map: {
+        ...base.map,
+        tiles,
+        coverTiles: [{ col: 3, row: 11 }],
+      },
+    };
+    const result = commitAttack(state, {
+      attackerSide: "player",
+      weaponId: "pistol",
+      targetId: "alien-1",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    // Whether hit or miss, ammo always decrements by 1.
+    expect(result.state.protagonist.pistolAmmo).toBe(5);
+  });
+
+  test("Marksman discounts pistol AP cost to 1", () => {
+    const state = pistolFixture({ has: "marksman" });
+    const startingAP = state.protagonist.currentAP;
+    const result = commitAttack(state, {
+      attackerSide: "player",
+      weaponId: "pistol",
+      targetId: "alien-1",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.state.protagonist.currentAP).toBe(startingAP - 1);
+  });
+});

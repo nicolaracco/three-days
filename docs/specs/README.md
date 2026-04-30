@@ -38,3 +38,4 @@ Specs are numbered in the order they're authored, not in the order of the roadma
 | 0012 | [Ranged enemies + line-of-sight](0012-ranged-enemies-los.md)                            | Done     | §13 Day 4 |
 | 0013 | [Traits — character generation, pre-run picker, 4-of-5 wired](0013-traits.md)           | In progress | §13 Day 5 |
 | 0014 | [Cover system + qualitative hit chance](0014-cover-and-hit-chance.md)                   | In progress | §13 Day 6 |
+| 0015 | [Player ranged weapons (pistol) + projected hit-chance UI](0015-player-ranged-weapons.md) | In progress | §13 Day 6 |

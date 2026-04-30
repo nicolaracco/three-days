@@ -64,6 +64,14 @@ export interface RunState {
      */
     hypochondriacPenaltyPending: boolean;
     hypochondriacTriggeredThisMap: boolean;
+    /**
+     * Spec 0015 — pistol ammo state. `pistolAmmo` is the round count
+     * currently in the chamber; `pistolMagazines` is the number of
+     * spare magazines available to reload. Both carry forward across
+     * the Day-2 transition (no auto-refill).
+     */
+    pistolAmmo: number;
+    pistolMagazines: number;
   };
   enemies: Enemy[];
   itemsOnMap: Item[];
@@ -138,6 +146,10 @@ export function createRunStateFromMap(opts: {
       inventory,
       hypochondriacPenaltyPending: false,
       hypochondriacTriggeredThisMap: false,
+      // Spec 0015: pistol starting state. Default 1 magazine; Resourceful
+      // adds a second per GDD §6.2.
+      pistolAmmo: balance.PISTOL_MAG_SIZE,
+      pistolMagazines: traits.includes("resourceful") ? 2 : 1,
     },
     enemies: opts.enemies ?? loadDay1Enemies(),
     itemsOnMap,
@@ -502,4 +514,52 @@ export function checkRunEnd(state: RunState): RunState {
     }
   }
   return state;
+}
+
+// ----- Pistol (spec 0015) -----
+
+/**
+ * Spec 0015 — return the pistol's effective AP cost for this run.
+ * Marksman (per GDD §6.2) discounts shots by 1 AP — but not reloads.
+ */
+export function pistolApCost(traits: TraitId[]): number {
+  return traits.includes("marksman") ? 1 : balance.ATTACK_AP_COST;
+}
+
+export type ReloadResult =
+  | { ok: true; state: RunState }
+  | {
+      ok: false;
+      reason: "no-magazines" | "insufficient-ap" | "already-full";
+    };
+
+/**
+ * Spec 0015 — refill the pistol from a spare magazine. Costs
+ * `RELOAD_AP_COST` AP regardless of trait (Marksman discounts
+ * shots, not reloads). Rejects when no spare, no AP, or the
+ * chamber is already full.
+ */
+export function reloadPistol(state: RunState): ReloadResult {
+  const p = state.protagonist;
+  if (p.pistolAmmo >= balance.PISTOL_MAG_SIZE) {
+    return { ok: false, reason: "already-full" };
+  }
+  if (p.pistolMagazines <= 0) {
+    return { ok: false, reason: "no-magazines" };
+  }
+  if (p.currentAP < balance.RELOAD_AP_COST) {
+    return { ok: false, reason: "insufficient-ap" };
+  }
+  return {
+    ok: true,
+    state: {
+      ...state,
+      protagonist: {
+        ...p,
+        pistolAmmo: balance.PISTOL_MAG_SIZE,
+        pistolMagazines: p.pistolMagazines - 1,
+        currentAP: p.currentAP - balance.RELOAD_AP_COST,
+      },
+    },
+  };
 }

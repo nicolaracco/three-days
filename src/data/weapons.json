@@ -12,5 +12,12 @@
     "damage": 1,
     "range": 99,
     "apCost": 2
+  },
+  {
+    "id": "pistol",
+    "name": "Pistol",
+    "damage": 1,
+    "range": 99,
+    "apCost": 2
   }
 ]
