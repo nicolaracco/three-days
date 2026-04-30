@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { createRng } from "./rng";
+import { createRng, nextRoll01 } from "./rng";
 
 describe("createRng + next", () => {
   test("same seed produces identical sequence over 100 calls", () => {
@@ -102,5 +102,38 @@ describe("roll01", () => {
     // Loose sanity check: expect within 30%–70% of total
     expect(trues).toBeGreaterThan(total * 0.3);
     expect(trues).toBeLessThan(total * 0.7);
+  });
+});
+
+describe("nextRoll01 (spec 0014)", () => {
+  test("is pure: same input state yields same value and nextState", () => {
+    const a = nextRoll01(42);
+    const b = nextRoll01(42);
+    expect(a.value).toBe(b.value);
+    expect(a.nextState).toBe(b.nextState);
+  });
+
+  test("matches the createRng sequence when threaded by hand", () => {
+    const seed = 12345;
+    const rng = createRng(seed);
+    let state = seed >>> 0;
+    for (let i = 0; i < 20; i++) {
+      const { value, nextState } = nextRoll01(state);
+      expect(value).toBe(rng.next());
+      state = nextState;
+    }
+  });
+
+  test("threaded across 1000 calls produces a roughly uniform distribution", () => {
+    let state = 7;
+    let belowHalf = 0;
+    const total = 1000;
+    for (let i = 0; i < total; i++) {
+      const r = nextRoll01(state);
+      if (r.value < 0.5) belowHalf++;
+      state = r.nextState;
+    }
+    expect(belowHalf).toBeGreaterThan(total * 0.45);
+    expect(belowHalf).toBeLessThan(total * 0.55);
   });
 });

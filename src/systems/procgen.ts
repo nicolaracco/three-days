@@ -368,7 +368,29 @@ function materialize(
     }
   }
 
-  return { width, height, start, tiles, spawnSlots, itemsOnMap };
+  // Spec 0014: cover tiles aggregate the same way. No chunk authors
+  // cover yet (Day-1 has only one melee enemy, no ranged threat to
+  // hide from), but the plumbing is here so a future chunk-cover
+  // spec is a JSON edit, not a code edit.
+  const coverTiles: TilePos[] = [];
+  for (const p of result.placed) {
+    for (const c of p.chunk.coverTiles) {
+      coverTiles.push({
+        col: p.offset.col - minCol + c.col,
+        row: p.offset.row - minRow + c.row,
+      });
+    }
+  }
+
+  return {
+    width,
+    height,
+    start,
+    tiles,
+    spawnSlots,
+    itemsOnMap,
+    coverTiles,
+  };
 }
 
 /** Convert a chunk tile into a map tile — door becomes floor. */

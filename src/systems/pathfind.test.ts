@@ -75,6 +75,7 @@ describe("bfs", () => {
       ],
       spawnSlots: [],
       itemsOnMap: [],
+      coverTiles: [],
     };
     // Step through the exit tile to a floor on the far side.
     const through = bfs({ col: 0, row: 0 }, { col: 2, row: 0 }, exitMap, []);

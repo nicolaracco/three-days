@@ -117,6 +117,7 @@ describe("Chunk type", () => {
       start: { col: 0, row: 0 },
       spawnSlots: [],
       itemSlots: [],
+      coverTiles: [],
       connectors: [conn],
       tiles: [[{ kind: "door" }]],
     };

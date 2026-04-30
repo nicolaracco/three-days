@@ -347,6 +347,21 @@ export class RunScene extends Phaser.Scene {
         }
       }
     }
+    // Spec 0014: a low stripe at the bottom of each cover tile reads
+    // as "stand behind this." Static — cover positions don't change
+    // during a run, so this lives in renderMap rather than refreshAll.
+    for (const cover of this.state.map.coverTiles) {
+      const px = tileToPixel(cover, this.gridCfg);
+      this.add
+        .rectangle(
+          px.x + (TILE_SIZE - 24) / 2,
+          px.y + TILE_SIZE - 5,
+          24,
+          3,
+          COLOR.tileBorder,
+        )
+        .setOrigin(0, 0);
+    }
   }
 
   /**
@@ -1649,10 +1664,17 @@ export class RunScene extends Phaser.Scene {
       );
     } else {
       // attacked
-      this.flashSprite(this.protagonistSprite, COLOR.protagonist);
+      const attacker = this.state.enemies.find((e) => e.id === enemyId);
+      // Spec 0014: skip the protagonist hit-flash on a miss, and float
+      // a MISS label up from the protagonist's tile so the absence of
+      // damage reads as intentional rather than as a bug.
+      if (result.hit) {
+        this.flashSprite(this.protagonistSprite, COLOR.protagonist);
+      } else {
+        this.drawMissFloater();
+      }
       // Spec 0012: ranged attackers draw a brief shot-line from
       // shooter to player so it's clear which enemy fired.
-      const attacker = this.state.enemies.find((e) => e.id === enemyId);
       if (attacker && attacker.kind === "ranged") {
         this.drawShotAnimation(attacker.position);
       }
@@ -1667,6 +1689,31 @@ export class RunScene extends Phaser.Scene {
         this.tryEnemyAct(enemyId, enemyIndex);
       });
     }
+  }
+
+  /**
+   * Spec 0014 — float a "MISS" text up from the protagonist's tile,
+   * fading and rising over `FLASH_MS`. Drawn in world coordinates so
+   * it tracks the camera.
+   */
+  private drawMissFloater(): void {
+    const px = tileToPixel(this.state.protagonist.position, this.gridCfg);
+    const cx = px.x + TILE_SIZE / 2;
+    const cy = px.y + 4;
+    const text = this.add
+      .text(cx, cy, "MISS", {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        color: COLOR.text,
+      })
+      .setOrigin(0.5, 1);
+    this.tweens.add({
+      targets: text,
+      alpha: { from: 1, to: 0 },
+      y: { from: cy, to: cy - 12 },
+      duration: FLASH_MS,
+      onComplete: () => text.destroy(),
+    });
   }
 
   /**

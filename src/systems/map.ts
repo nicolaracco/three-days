@@ -58,6 +58,12 @@ export interface Day1Map {
    * static fixture (`loadDay1Map`) returns an empty array.
    */
   itemsOnMap: Item[];
+  /**
+   * Spec 0014: tile positions that provide cover. A target whose
+   * Bresenham line-of-fire passes through any of these is considered
+   * covered. Authored per chunk for Day 1 and inline for Day 2.
+   */
+  coverTiles: TilePos[];
 }
 
 /**
@@ -76,6 +82,7 @@ export function loadDay1Map(): Day1Map {
     ),
     spawnSlots: [],
     itemsOnMap: [],
+    coverTiles: [],
   };
 }
 
@@ -111,6 +118,8 @@ interface RawDay2Map {
   tiles: string[][];
   itemsOnMap: RawDay2Item[];
   enemies: RawDay2Enemy[];
+  /** Spec 0014 — optional; defaults to []. */
+  coverTiles?: TilePos[];
 }
 
 /**
@@ -132,6 +141,7 @@ export function loadDay2Map(key: Day2MapKey): Day2MapBundle {
       kind: liftItemKind(i.kind, raw.key),
       position: i.position,
     })),
+    coverTiles: (raw.coverTiles ?? []).map((c) => ({ col: c.col, row: c.row })),
   };
   const enemies: Enemy[] = raw.enemies.map((e) => {
     if (e.kind !== "melee" && e.kind !== "ranged") {

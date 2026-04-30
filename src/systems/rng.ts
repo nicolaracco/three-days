@@ -21,6 +21,26 @@ export interface Rng {
   roll01(probability: number): boolean;
 }
 
+/**
+ * Spec 0014 — pure stateless mulberry32 step. Given the internal state
+ * (a 32-bit integer), returns the next sample in `[0, 1)` along with
+ * the new state. Reducers that need to roll inside a pure function
+ * (e.g., `commitAttack`) thread `state.rngState` through this helper
+ * instead of holding a stateful `Rng` instance.
+ */
+export function nextRoll01(state: number): {
+  value: number;
+  nextState: number;
+} {
+  const s = (state + 0x6d2b79f5) >>> 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return {
+    value: ((t ^ (t >>> 14)) >>> 0) / 4294967296,
+    nextState: s,
+  };
+}
+
 /** Create an `Rng` seeded by `seed`. Same seed produces identical output. */
 export function createRng(seed: number): Rng {
   // mulberry32 — small, deterministic PRNG.

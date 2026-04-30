@@ -13,8 +13,15 @@
  * inspect.
  */
 
+import {
+  type HitChance,
+  coverBetween,
+  hitChance,
+  hitChanceProbability,
+} from "./cover";
 import type { TilePos } from "./grid";
 import { hasLoS } from "./los";
+import { nextRoll01 } from "./rng";
 import type { RunState } from "./run-state";
 import { getWeapon } from "./weapon";
 
@@ -40,7 +47,16 @@ type AttackFailure = {
 export type AttackResult = { ok: true; damage: number } | AttackFailure;
 
 export type CommitAttackResult =
-  | { ok: true; state: RunState; damage: number; killed: boolean }
+  | {
+      ok: true;
+      state: RunState;
+      damage: number;
+      killed: boolean;
+      /** Spec 0014 — true when the roll succeeded, false on miss. */
+      hit: boolean;
+      /** Spec 0014 — qualitative tier the roll was made against. */
+      level: HitChance;
+    }
   | AttackFailure;
 
 interface ResolvedActor {
@@ -123,12 +139,40 @@ export function commitAttack(
   const weapon = getWeapon(params.weaponId);
   if (!weapon) return { ok: false, reason: "no-weapon" };
 
-  const damage = result.damage;
+  // Spec 0014: compute the qualitative hit-chance level and roll
+  // against it. Misses still cost AP and still propagate rngState,
+  // but apply no damage.
+  const attackerActor =
+    params.attackerSide === "player"
+      ? state.protagonist
+      : state.enemies.find((e) => e.id === params.attackerId);
+  const targetActor =
+    params.targetId === "protagonist"
+      ? state.protagonist
+      : state.enemies.find((e) => e.id === params.targetId);
+  if (!attackerActor || !targetActor) {
+    return { ok: false, reason: "no-target" };
+  }
+  const cover = coverBetween(
+    attackerActor.position,
+    targetActor.position,
+    state.map,
+  );
+  const level = hitChance({
+    attacker: attackerActor.position,
+    target: targetActor.position,
+    weaponRange: weapon.range,
+    cover,
+  });
+  const probability = hitChanceProbability(level);
+  const { value: roll, nextState: nextRngState } = nextRoll01(state.rngState);
+  const hit = roll < probability;
+  const damage = hit ? result.damage : 0;
   let nextProtagonist = state.protagonist;
   let nextEnemies = state.enemies;
   let killed = false;
 
-  // Attacker AP deduction.
+  // Attacker AP deduction (always — miss still spends AP).
   if (params.attackerSide === "player") {
     nextProtagonist = {
       ...nextProtagonist,
@@ -142,35 +186,40 @@ export function commitAttack(
     );
   }
 
-  // Target HP application.
-  if (params.targetId === "protagonist") {
-    const newHP = nextProtagonist.currentHP - damage;
-    nextProtagonist = { ...nextProtagonist, currentHP: newHP };
-    killed = newHP <= 0;
-    // Spec 0013: Hypochondriac arms the once-per-map AP penalty on
-    // first damage taken. If already triggered this map, no re-arm.
-    if (
-      damage > 0 &&
-      state.traits.includes("hypochondriac") &&
-      !nextProtagonist.hypochondriacTriggeredThisMap
-    ) {
-      nextProtagonist = {
-        ...nextProtagonist,
-        hypochondriacPenaltyPending: true,
-      };
-    }
-  } else {
-    const targetIndex = nextEnemies.findIndex((e) => e.id === params.targetId);
-    if (targetIndex === -1) return { ok: false, reason: "no-target" };
-    const target = nextEnemies[targetIndex];
-    const newHP = target.currentHP - damage;
-    killed = newHP <= 0;
-    if (killed) {
-      nextEnemies = nextEnemies.filter((e) => e.id !== params.targetId);
+  // Target HP application — only on hit. Misses skip damage, kill, and
+  // hypochondriac arming entirely.
+  if (hit) {
+    if (params.targetId === "protagonist") {
+      const newHP = nextProtagonist.currentHP - damage;
+      nextProtagonist = { ...nextProtagonist, currentHP: newHP };
+      killed = newHP <= 0;
+      // Spec 0013: Hypochondriac arms the once-per-map AP penalty on
+      // first damage taken. If already triggered this map, no re-arm.
+      if (
+        damage > 0 &&
+        state.traits.includes("hypochondriac") &&
+        !nextProtagonist.hypochondriacTriggeredThisMap
+      ) {
+        nextProtagonist = {
+          ...nextProtagonist,
+          hypochondriacPenaltyPending: true,
+        };
+      }
     } else {
-      nextEnemies = nextEnemies.map((e) =>
-        e.id === params.targetId ? { ...e, currentHP: newHP } : e,
+      const targetIndex = nextEnemies.findIndex(
+        (e) => e.id === params.targetId,
       );
+      if (targetIndex === -1) return { ok: false, reason: "no-target" };
+      const target = nextEnemies[targetIndex];
+      const newHP = target.currentHP - damage;
+      killed = newHP <= 0;
+      if (killed) {
+        nextEnemies = nextEnemies.filter((e) => e.id !== params.targetId);
+      } else {
+        nextEnemies = nextEnemies.map((e) =>
+          e.id === params.targetId ? { ...e, currentHP: newHP } : e,
+        );
+      }
     }
   }
 
@@ -180,8 +229,11 @@ export function commitAttack(
       ...state,
       protagonist: nextProtagonist,
       enemies: nextEnemies,
+      rngState: nextRngState,
     },
     damage,
     killed,
+    hit,
+    level,
   };
 }

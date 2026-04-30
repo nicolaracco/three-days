@@ -73,6 +73,11 @@ export interface Chunk {
   spawnSlots: TilePos[];
   /** Chunk-local item placements (spec 0010). Empty array allowed. */
   itemSlots: ItemSlot[];
+  /**
+   * Chunk-local cover positions (spec 0014). Empty array allowed and
+   * is the default (no Day-1 chunk authors cover this spec).
+   */
+  coverTiles: TilePos[];
   /** Edges where this chunk can connect to other chunks. */
   connectors: Connector[];
   /** Indexed [row][col] to match human-readable JSON authoring order. */
@@ -138,6 +143,8 @@ interface RawChunk {
   start: TilePos | null;
   spawnSlots: TilePos[];
   itemSlots?: RawItemSlot[];
+  /** Spec 0014 — optional. Defaults to []. */
+  coverTiles?: TilePos[];
   connectors: RawConnector[];
   tiles: string[][];
 }
@@ -173,6 +180,14 @@ function liftChunk(raw: RawChunk): Chunk {
     }
     return { col: s.col, row: s.row, kind: s.kind };
   });
+  const coverTiles: TilePos[] = (raw.coverTiles ?? []).map((c) => {
+    if (c.col < 0 || c.col >= raw.width || c.row < 0 || c.row >= raw.height) {
+      throw new Error(
+        `Chunk ${raw.id}: coverTile at (${c.col}, ${c.row}) is out of bounds`,
+      );
+    }
+    return { col: c.col, row: c.row };
+  });
   return {
     id: raw.id,
     kind: raw.kind,
@@ -181,6 +196,7 @@ function liftChunk(raw: RawChunk): Chunk {
     start: raw.start,
     spawnSlots: raw.spawnSlots,
     itemSlots,
+    coverTiles,
     connectors: raw.connectors as Connector[],
     tiles: raw.tiles.map((row) => row.map((s) => liftTile(s, raw.id))),
   };

@@ -73,6 +73,12 @@ export interface RunState {
   turn: number;
   /** Spec 0013 — traits selected at run start. Always length 2. */
   traits: TraitId[];
+  /**
+   * Spec 0014 — mulberry32 internal state used by `commitAttack` for
+   * hit-chance rolls. Threaded through reducers so attack outcomes are
+   * reproducible from the run's seed. Initialized from `seed`.
+   */
+  rngState: number;
   /** Spec 0011 — `1` for procgen Day-1, `2` after `transitionToDay2`. */
   currentDay: 1 | 2;
   /** Spec 0011 — set when the day chain fires; `null` on Day 1. */
@@ -143,6 +149,7 @@ export function createRunStateFromMap(opts: {
     day2MapKey: null,
     runEnd: null,
     traits,
+    rngState: opts.seed >>> 0,
   };
 }
 

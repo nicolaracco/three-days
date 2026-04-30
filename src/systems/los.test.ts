@@ -11,6 +11,7 @@ const allFloor = (width: number, height: number): Day1Map => ({
   ),
   spawnSlots: [],
   itemsOnMap: [],
+  coverTiles: [],
 });
 
 describe("tilesAlongLine", () => {

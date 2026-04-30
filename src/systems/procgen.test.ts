@@ -142,6 +142,7 @@ describe("isFullyConnected", () => {
       tiles: [[{ kind: "floor" }]],
       spawnSlots: [],
       itemsOnMap: [],
+      coverTiles: [],
     };
     expect(isFullyConnected(map, map.start)).toBe(true);
   });
@@ -159,6 +160,7 @@ describe("isFullyConnected", () => {
       tiles,
       spawnSlots: [],
       itemsOnMap: [],
+      coverTiles: [],
     };
     expect(isFullyConnected(map, map.start)).toBe(false);
   });
@@ -175,6 +177,7 @@ describe("isFullyConnected", () => {
       tiles,
       spawnSlots: [],
       itemsOnMap: [],
+      coverTiles: [],
     };
     expect(isFullyConnected(map, map.start)).toBe(true);
   });

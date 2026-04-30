@@ -28,6 +28,8 @@ export type EnemyActResult =
       attackerId: string;
       damage: number;
       killed: boolean;
+      /** Spec 0014 — false on miss; the scene shows a MISS floater. */
+      hit: boolean;
     }
   | {
       kind: "moved";
@@ -197,6 +199,7 @@ export function enemyAct(state: RunState, enemyId: string): EnemyActResult {
       attackerId: enemyId,
       damage: attack.damage,
       killed: attack.killed,
+      hit: attack.hit,
     };
   }
 

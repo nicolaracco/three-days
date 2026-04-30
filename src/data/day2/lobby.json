@@ -126,6 +126,14 @@
     ]
   ],
   "itemsOnMap": [{ "kind": "medkit", "position": { "col": 1, "row": 8 } }],
+  "coverTiles": [
+    { "col": 2, "row": 3 },
+    { "col": 4, "row": 3 },
+    { "col": 5, "row": 3 },
+    { "col": 7, "row": 3 },
+    { "col": 2, "row": 7 },
+    { "col": 7, "row": 7 }
+  ],
   "enemies": [
     {
       "id": "lobby-melee-1",
